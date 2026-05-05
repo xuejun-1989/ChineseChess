@@ -78,6 +78,32 @@ int last_to_r = -1;
 int last_to_c = -1;
 bool has_last_step = false;
 
+// ===================== 悔棋按钮（新增） =====================
+struct UndoButton {
+    int x, y, w, h;
+    TCHAR text[16];
+    bool hover;
+} undo_btn = {
+    610,   // X坐标（棋盘右侧）
+    120,   // Y坐标
+    100,   // 宽度
+    50,    // 高度
+    _T("悔棋"),
+    false
+};
+
+// 悔棋历史记录（保留）
+struct StepRecord {
+    int from_r, from_c;
+    int to_r, to_c;
+    ChessPiece old_target;
+    Color old_turn;
+    bool old_game_over;
+    int last_fr, last_fc, last_tr, last_tc;
+    bool has_last;
+};
+std::vector<StepRecord> move_history;
+
 // ========== 仅支持落子/吃子MP3音效 ==========
 void play_sound(LPCTSTR sound_file) {
     TCHAR cmd[512];
@@ -342,7 +368,16 @@ void repaint_all() {
             }
         }
     }
-
+    // ===================== 绘制悔棋按钮 =====================
+    setfillcolor(undo_btn.hover ? RGB(255, 200, 200) : RGB(255, 230, 230));
+    setcolor(BLACK);
+    fillrectangle(undo_btn.x, undo_btn.y, undo_btn.x + undo_btn.w, undo_btn.y + undo_btn.h);
+    settextcolor(BLACK);
+    setbkmode(TRANSPARENT);
+    settextstyle(24, 0, _T("黑体"));
+    int tx = undo_btn.x + (undo_btn.w - textwidth(undo_btn.text)) / 2;
+    int ty = undo_btn.y + (undo_btn.h - textheight(undo_btn.text)) / 2;
+    outtextxy(tx, ty, undo_btn.text);
     FlushBatchDraw();
 }
 
@@ -566,15 +601,25 @@ bool is_general_alive(Color color) {
     return false;
 }
 
-// --- 执行棋子移动（仅保留落子/吃子音效） ---
+// --- 执行棋子移动（含悔棋记录+高亮+音效）---
 void move_piece(int from_r, int from_c, int to_r, int to_c) {
-    // ========== 新增：记录上一步走棋的起点和终点 ==========
-    last_from_r = from_r;
-    last_from_c = from_c;
-    last_to_r = to_r;
-    last_to_c = to_c;
+    // 保存悔棋记录
+    StepRecord rec;
+    rec.from_r = from_r; rec.from_c = from_c;
+    rec.to_r = to_r; rec.to_c = to_c;
+    rec.old_target = board[to_r][to_c];
+    rec.old_turn = turn;
+    rec.old_game_over = game_over;
+    rec.last_fr = last_from_r; rec.last_fc = last_from_c;
+    rec.last_tr = last_to_r; rec.last_tc = last_to_c;
+    rec.has_last = has_last_step;
+    move_history.push_back(rec);
+
+    // 记录上一步高亮
+    last_from_r = from_r; last_from_c = from_c;
+    last_to_r = to_r; last_to_c = to_c;
     has_last_step = true;
-    // ======================================================
+
     // 判断是否吃子
     bool is_eat = (board[to_r][to_c].color != CHESS_EMPTY);
 
@@ -584,29 +629,58 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
     board[from_r][from_c].type = TYPE_NONE;
     board[from_r][from_c].show = false;
 
-    // ========== 仅保留落子/吃子音效 ==========
+    // 音效
     if (is_eat) {
-        play_sound(_T("D:\\code\\ChineseChess\\吃子.mp3"));
+        play_sound(_T("吃子.mp3"));
     }
     else {
-        play_sound(_T("D:\\code\\ChineseChess\\落子.mp3"));
+        play_sound(_T("落子.mp3"));
     }
-    // ==========================================
 
     // 胜负判定
     if (!is_general_alive(CHESS_RED)) {
         game_over = true;
-        _tcscpy_s(game_result, _countof(game_result), _T("游戏结束！黑方胜利！"));
+        _tcscpy_s(game_result, _T("游戏结束！黑方胜利！"));
     }
     else if (!is_general_alive(CHESS_BLACK)) {
         game_over = true;
-        _tcscpy_s(game_result, _countof(game_result), _T("游戏结束！红方胜利！"));
+        _tcscpy_s(game_result, _T("游戏结束！红方胜利！"));
     }
 
     // 切换回合
     if (!game_over) {
         turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
     }
+}
+// 【新增：悔棋函数】
+void undo_move() {
+    if (move_history.empty() || game_over) return;
+
+    StepRecord rec = move_history.back();
+    move_history.pop_back();
+
+    // 恢复棋盘
+    board[rec.from_r][rec.from_c] = board[rec.to_r][rec.to_c];
+    board[rec.to_r][rec.to_c] = rec.old_target;
+
+    // 恢复状态
+    turn = rec.old_turn;
+    game_over = rec.old_game_over;
+
+    // 恢复高亮
+    last_from_r = rec.last_fr;
+    last_from_c = rec.last_fc;
+    last_to_r = rec.last_tr;
+    last_to_c = rec.last_tc;
+    has_last_step = rec.has_last;
+
+    repaint_all();
+}
+
+// 判断鼠标是否在按钮上
+bool is_in_undo_btn(int x, int y) {
+    return x >= undo_btn.x && x <= undo_btn.x + undo_btn.w
+        && y >= undo_btn.y && y <= undo_btn.y + undo_btn.h;
 }
 // 棋子基础价值
 enum PieceValue {
@@ -968,12 +1042,20 @@ int main() {
 
         // 玩家鼠标交互
         if (peekmessage(&msg, EM_MOUSE)) {
+            // 检测悔棋按钮悬浮
+            undo_btn.hover = is_in_undo_btn(msg.x, msg.y);
+
             if (msg.message == WM_LBUTTONDOWN) {
+                // 点击悔棋按钮
+                if (is_in_undo_btn(msg.x, msg.y)) {
+                    undo_move();
+                    continue;
+                }
+
+                // 原有棋盘点击逻辑
                 int click_r, click_c;
                 if (click_to_board(msg.x, msg.y, click_r, click_c)) {
-
                     if (!is_selected) {
-                        // 选中当前回合的己方棋子
                         if (board[click_r][click_c].color == turn) {
                             selected_row = click_r;
                             selected_col = click_c;
@@ -982,20 +1064,15 @@ int main() {
                         }
                     }
                     else {
-                        // 切换选中己方棋子
                         if (board[click_r][click_c].color == turn) {
                             selected_row = click_r;
                             selected_col = click_c;
                             repaint_all();
                         }
-                        // 尝试移动棋子
                         else {
-                            // 必须同时满足：棋子走法合法 + 走棋后自己不会被将军
-                            if (is_move_valid(selected_row, selected_col, click_r, click_c)
-                                && is_move_safe(selected_row, selected_col, click_r, click_c)) {
+                            if (is_move_valid(selected_row, selected_col, click_r, click_c) && is_move_safe(selected_row, selected_col, click_r, click_c)) {
                                 move_piece(selected_row, selected_col, click_r, click_c);
                             }
-                            // 无论是否成功，都取消选中
                             is_selected = false;
                             selected_row = -1;
                             selected_col = -1;
