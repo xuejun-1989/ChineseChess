@@ -1,4 +1,9 @@
 #define _CRT_SECURE_NO_WARNINGS
+// ========== 音效依赖 ==========
+#include <Windows.h>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
+// ==============================
 #include <graphics.h>
 #include <conio.h>
 #include <cstring>
@@ -8,7 +13,7 @@
 #include <cstdlib>
 #include <ctime>
 
-// --- 1. 全局参数与类型定义 ---
+// --- 全局参数与类型定义 ---
 #define GRID_SIZE 60
 #define LEFT_MARGIN 80
 #define TOP_MARGIN 80
@@ -42,14 +47,20 @@ struct ChessMove {
 
 // 按钮结构体（模式选择界面用）
 struct Button {
-    int x;          // 左上角x坐标
-    int y;          // 左上角y坐标
-    int width;      // 宽度
-    int height;     // 高度
-    TCHAR text[32]; // 按钮文字
-    bool is_hover;  // 鼠标是否悬浮
-    GameMode mode;  // 按钮对应的模式
+    int x;
+    int y;
+    int width;
+    int height;
+    TCHAR text[32];
+    bool is_hover;
+    GameMode mode;
 };
+
+// ========== 函数前置声明 ==========
+POINT find_general_pos(Color color);
+bool is_checked(Color color);
+bool is_move_safe(int from_r, int from_c, int to_r, int to_c);
+// ==================================
 
 // 全局状态变量
 ChessPiece board[ROW_NUM][COL_NUM];
@@ -60,11 +71,24 @@ Color turn = CHESS_RED;
 GameMode game_mode = MODE_NONE;
 bool game_over = false;
 TCHAR game_result[64];
-POINT find_general_pos(Color color);
-bool is_checked(Color color);
-bool is_move_safe(int from_r, int from_c, int to_r, int to_c);
 
-// --- 2. 辅助工具函数 ---
+// ========== 仅支持落子/吃子MP3音效 ==========
+void play_sound(LPCTSTR sound_file) {
+    TCHAR cmd[512];
+    // 先关闭之前的播放，避免冲突
+    mciSendString(_T("close all"), NULL, 0, NULL);
+    // 拼接打开命令，兼容相对路径
+    _stprintf_s(cmd, _T("open \"%s\" type mpegvideo alias sound"), sound_file);
+    // 执行打开，失败直接返回，不影响游戏运行
+    if (mciSendString(cmd, NULL, 0, NULL) != 0) {
+        return;
+    }
+    // 从头播放音效
+    mciSendString(_T("play sound from 0"), NULL, 0, NULL);
+}
+// ==========================================
+
+// --- 辅助工具函数 ---
 // 坐标转换：棋盘行列 → 窗口像素
 POINT get_pos(int row, int col) {
     POINT p;
@@ -78,7 +102,7 @@ bool is_point_in_button(int x, int y, Button btn) {
     return x >= btn.x && x <= btn.x + btn.width && y >= btn.y && y <= btn.y + btn.height;
 }
 
-// --- 3. 棋盘绘制 ---
+// --- 棋盘绘制 ---
 void draw_chessboard() {
     setlinecolor(BLACK);
     setlinestyle(PS_SOLID, 2);
@@ -115,7 +139,7 @@ void draw_chessboard() {
     line(get_pos(7, 5).x, get_pos(7, 5).y, get_pos(9, 3).x, get_pos(9, 3).y);
 }
 
-// --- 4. 棋子绘制（含选中高亮） ---
+// --- 棋子绘制（含选中高亮） ---
 void draw_piece(int row, int col) {
     ChessPiece p = board[row][col];
     if (p.color == CHESS_EMPTY || !p.show) return;
@@ -171,7 +195,7 @@ void draw_piece(int row, int col) {
     outtextxy(tx, ty, text);
 }
 
-// --- 5. 游戏初始化 ---
+// --- 游戏初始化 ---
 void init_game() {
     // 清空棋盘
     for (int r = 0; r < ROW_NUM; r++) {
@@ -233,7 +257,7 @@ void init_game() {
     srand((unsigned int)time(NULL));
 }
 
-// --- 6. 全局画面重绘（双缓冲无闪屏） ---
+// --- 全局画面重绘（双缓冲无闪屏） ---
 void repaint_all() {
     cleardevice();
     draw_chessboard();
@@ -261,7 +285,7 @@ void repaint_all() {
         // 回合提示
         if (turn == CHESS_RED) {
             outtextxy(100, 50, _T("当前回合：红方"));
-            // 新增：红方被将军提示
+            // 红方被将军提示
             if (is_checked(CHESS_RED)) {
                 settextcolor(RED);
                 outtextxy(100, 80, _T("警告！红方被将军！"));
@@ -269,7 +293,7 @@ void repaint_all() {
         }
         else {
             outtextxy(100, 50, _T("当前回合：黑方"));
-            // 新增：黑方被将军提示
+            // 黑方被将军提示
             if (is_checked(CHESS_BLACK)) {
                 settextcolor(RED);
                 outtextxy(100, 80, _T("警告！黑方被将军！"));
@@ -280,7 +304,7 @@ void repaint_all() {
     FlushBatchDraw();
 }
 
-// --- 7. 鼠标点击坐标转棋盘行列 ---
+// --- 鼠标点击坐标转棋盘行列 ---
 bool click_to_board(int x, int y, int& row, int& col) {
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
@@ -297,7 +321,7 @@ bool click_to_board(int x, int y, int& row, int& col) {
     return false;
 }
 
-// --- 8. 辅助：计算两点之间棋子数量 ---
+// --- 辅助：计算两点之间棋子数量 ---
 int count_pieces_between(int r1, int c1, int r2, int c2) {
     int count = 0;
     if (r1 == r2) {
@@ -317,7 +341,7 @@ int count_pieces_between(int r1, int c1, int r2, int c2) {
     return count;
 }
 
-// --- 9. 核心：走棋规则校验 ---
+// --- 核心：走棋规则校验 ---
 bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
     ChessPiece from = board[from_r][from_c];
     ChessPiece to = board[to_r][to_c];
@@ -410,7 +434,8 @@ bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
         return false;
     }
 }
-// --- 【新增1】辅助：找到某一方将/帅的位置 ---
+
+// --- 辅助：找到某一方将/帅的位置 ---
 POINT find_general_pos(Color color) {
     POINT pos = { -1, -1 };
     for (int r = 0; r < ROW_NUM; r++) {
@@ -425,16 +450,14 @@ POINT find_general_pos(Color color) {
     return pos;
 }
 
-// --- 【新增2】核心：判断某一方是否被将军 ---
-// color：要判断的一方（比如CHESS_RED，就是判断红方是否被黑方将军）
-// --- 【新增2】核心：判断某一方是否被将军 ---
+// --- 核心：判断某一方是否被将军（含将帅照面规则） ---
 bool is_checked(Color color) {
     POINT general_pos = find_general_pos(color);
     if (general_pos.x == -1) return false;
 
     Color enemy_color = (color == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
 
-    // 【新增规则1】检查对方棋子是否能将军
+    // 检查对方棋子是否能将军
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
             if (board[r][c].color == enemy_color) {
@@ -445,7 +468,7 @@ bool is_checked(Color color) {
         }
     }
 
-    // 【新增规则2】检查将帅是否直接照面（飞将）
+    // 检查将帅是否直接照面（飞将）
     POINT enemy_general_pos = find_general_pos(enemy_color);
     if (enemy_general_pos.x == general_pos.x) { // 同一列
         // 检查中间是否有棋子
@@ -467,8 +490,7 @@ bool is_checked(Color color) {
     return false;
 }
 
-// --- 【新增3】核心：判断走某一步棋之后，己方是否安全（不会被将军） ---
-// 原理：模拟走这步棋，检查是否被将军，再恢复棋盘
+// --- 核心：判断走某一步棋之后，己方是否安全 ---
 bool is_move_safe(int from_r, int from_c, int to_r, int to_c) {
     Color current_color = board[from_r][from_c].color;
     // 保存目标位置的原始棋子（用于恢复）
@@ -489,7 +511,8 @@ bool is_move_safe(int from_r, int from_c, int to_r, int to_c) {
 
     return safe;
 }
-// --- 10. 胜负判断 ---
+
+// --- 胜负判断 ---
 bool is_general_alive(Color color) {
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
@@ -501,12 +524,25 @@ bool is_general_alive(Color color) {
     return false;
 }
 
-// --- 11. 执行棋子移动 ---
+// --- 执行棋子移动（仅保留落子/吃子音效） ---
 void move_piece(int from_r, int from_c, int to_r, int to_c) {
+    // 判断是否吃子
+    bool is_eat = (board[to_r][to_c].color != CHESS_EMPTY);
+
+    // 移动棋子核心逻辑
     board[to_r][to_c] = board[from_r][from_c];
     board[from_r][from_c].color = CHESS_EMPTY;
     board[from_r][from_c].type = TYPE_NONE;
     board[from_r][from_c].show = false;
+
+    // ========== 仅保留落子/吃子音效 ==========
+    if (is_eat) {
+        play_sound(_T("D:\\code\\ChineseChess\\吃子.mp3"));
+    }
+    else {
+        play_sound(_T("D:\\code\\ChineseChess\\落子.mp3"));
+    }
+    // ==========================================
 
     // 胜负判定
     if (!is_general_alive(CHESS_RED)) {
@@ -524,7 +560,7 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
     }
 }
 
-// --- 12. AI逻辑：生成所有合法走法 ---
+// --- AI逻辑：生成所有合法走法 ---
 void generate_all_moves(Color color, std::vector<ChessMove>& moves) {
     moves.clear();
     for (int from_r = 0; from_r < ROW_NUM; from_r++) {
@@ -567,7 +603,7 @@ void generate_all_moves(Color color, std::vector<ChessMove>& moves) {
     }
 }
 
-// --- 13. AI执行走棋 ---
+// --- AI执行走棋 ---
 void ai_move() {
     if (game_over || turn != CHESS_BLACK) return;
 
@@ -590,16 +626,16 @@ void ai_move() {
     repaint_all();
 }
 
-// --- 14. 【核心优化】美化后的模式选择界面（鼠标点击） ---
+// --- 美化后的模式选择界面（鼠标点击） ---
 void select_game_mode() {
     initgraph(WINDOW_WIDTH, WINDOW_HEIGHT);
-    setbkcolor(RGB(240, 230, 200)); // 和棋盘统一的宣纸背景色
-    BeginBatchDraw(); // 开启双缓冲，避免界面闪烁
+    setbkcolor(RGB(240, 230, 200));
+    BeginBatchDraw();
 
     // 初始化两个按钮（居中排版）
     int btn_width = 300;
     int btn_height = 80;
-    int btn_x = (WINDOW_WIDTH - btn_width) / 2; // 水平居中
+    int btn_x = (WINDOW_WIDTH - btn_width) / 2;
     Button btn_two_player = { btn_x, 350, btn_width, btn_height, _T("双人对战"), false, MODE_TWO_PLAYER };
     Button btn_ai_player = { btn_x, 480, btn_width, btn_height, _T("人机对战（你执红方）"), false, MODE_AI };
 
@@ -610,12 +646,10 @@ void select_game_mode() {
     while (selected_mode == MODE_NONE) {
         // 监听鼠标消息
         while (peekmessage(&msg, EM_MOUSE)) {
-            // 鼠标移动：更新hover状态
             if (msg.message == WM_MOUSEMOVE) {
                 btn_two_player.is_hover = is_point_in_button(msg.x, msg.y, btn_two_player);
                 btn_ai_player.is_hover = is_point_in_button(msg.x, msg.y, btn_ai_player);
             }
-            // 鼠标左键点击：判断是否点击按钮
             if (msg.message == WM_LBUTTONDOWN) {
                 if (is_point_in_button(msg.x, msg.y, btn_two_player)) {
                     selected_mode = MODE_TWO_PLAYER;
@@ -645,16 +679,14 @@ void select_game_mode() {
         Button buttons[] = { btn_two_player, btn_ai_player };
         for (int i = 0; i < 2; i++) {
             Button btn = buttons[i];
-            // 按钮填充色：hover时用深一点的颜色，有交互反馈
             if (btn.is_hover) {
                 setfillcolor(RGB(220, 200, 170));
             }
             else {
                 setfillcolor(RGB(245, 235, 210));
             }
-            setlinecolor(RGB(120, 50, 20)); // 深棕色边框
+            setlinecolor(RGB(120, 50, 20));
             setlinestyle(PS_SOLID, 2);
-            // 圆角矩形按钮，比直角更美观
             fillroundrect(btn.x, btn.y, btn.x + btn.width, btn.y + btn.height, 10, 10);
 
             // 绘制按钮文字（居中）
@@ -670,7 +702,7 @@ void select_game_mode() {
         int tip_x = (WINDOW_WIDTH - textwidth(_T("点击按钮选择游戏模式"))) / 2;
         outtextxy(tip_x, 650, _T("点击按钮选择游戏模式"));
 
-        FlushBatchDraw(); // 整帧刷新
+        FlushBatchDraw();
 
         // 按ESC键直接退出
         if (_kbhit() && _getch() == 27) {
@@ -693,7 +725,7 @@ void select_game_mode() {
 
 // --- 主函数 ---
 int main() {
-    // 1. 选择游戏模式（美化后的鼠标点击版）
+    // 1. 选择游戏模式
     select_game_mode();
 
     // 2. 初始化游戏
@@ -702,7 +734,7 @@ int main() {
 
     ExMessage msg;
 
-    // 游戏主循环
+    // 3. 游戏主循环
     while (true) {
         // 游戏结束，仅响应ESC退出
         if (game_over) {
@@ -710,10 +742,10 @@ int main() {
             continue;
         }
 
-        // 【新增】回合开始时，判断当前方是否被将死
+        // 回合开始时，判断当前方是否被将死
         if (is_checked(turn)) {
             bool has_legal_move = false;
-            // 遍历所有己方棋子，看有没有合法的、能解将的走法
+            // 遍历所有己方棋子，找能解将的合法走法
             for (int from_r = 0; from_r < ROW_NUM; from_r++) {
                 for (int from_c = 0; from_c < COL_NUM; from_c++) {
                     if (board[from_r][from_c].color != turn) continue;
@@ -723,14 +755,14 @@ int main() {
                             if (is_move_valid(from_r, from_c, to_r, to_c)
                                 && is_move_safe(from_r, from_c, to_r, to_c)) {
                                 has_legal_move = true;
-                                goto end_check; // 找到合法步，直接跳出循环
+                                goto end_check;
                             }
                         }
                     }
                 }
             }
         end_check:
-            // 没有任何合法走法，就是被将死，游戏结束
+            // 无合法走法，被将死，游戏结束
             if (!has_legal_move) {
                 game_over = true;
                 if (turn == CHESS_RED) {
@@ -773,8 +805,7 @@ int main() {
                             repaint_all();
                         }
                         // 尝试移动棋子
-                        else
-                        {
+                        else {
                             // 必须同时满足：棋子走法合法 + 走棋后自己不会被将军
                             if (is_move_valid(selected_row, selected_col, click_r, click_c)
                                 && is_move_safe(selected_row, selected_col, click_r, click_c)) {
