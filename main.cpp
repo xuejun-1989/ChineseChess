@@ -12,7 +12,6 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
-#include<vector>
 
 // --- 全局参数与类型定义 ---
 #define GRID_SIZE 60
@@ -72,6 +71,12 @@ Color turn = CHESS_RED;
 GameMode game_mode = MODE_NONE;
 bool game_over = false;
 TCHAR game_result[64];
+// 上一步走棋的高亮记录（新增）
+int last_from_r = -1;
+int last_from_c = -1;
+int last_to_r = -1;
+int last_to_c = -1;
+bool has_last_step = false;
 
 // ========== 仅支持落子/吃子MP3音效 ==========
 void play_sound(LPCTSTR sound_file) {
@@ -138,6 +143,39 @@ void draw_chessboard() {
     line(get_pos(0, 5).x, get_pos(0, 5).y, get_pos(2, 3).x, get_pos(2, 3).y);
     line(get_pos(7, 3).x, get_pos(7, 3).y, get_pos(9, 5).x, get_pos(9, 5).y);
     line(get_pos(7, 5).x, get_pos(7, 5).y, get_pos(9, 3).x, get_pos(9, 3).y);
+}
+
+// 绘制上一步走棋的高亮
+void draw_last_step() {
+    if (!has_last_step) return;
+
+    // 保存原来的颜色
+    COLORREF old_color = getcolor();
+
+    // ========== 1. 起点：蓝色嵌套边框 ==========
+    POINT from_pos = get_pos(last_from_r, last_from_c);
+    // 外层大矩形（蓝色粗边框）
+    setcolor(RGB(0, 150, 255));
+    rectangle(from_pos.x - GRID_SIZE / 2 + 1, from_pos.y - GRID_SIZE / 2 + 1,
+        from_pos.x + GRID_SIZE / 2 - 1, from_pos.y + GRID_SIZE / 2 - 1);
+    // 内层小矩形（白色，和背景色接近，形成“粗边框”效果）
+    setcolor(WHITE);
+    rectangle(from_pos.x - GRID_SIZE / 2 + 3, from_pos.y - GRID_SIZE / 2 + 3,
+        from_pos.x + GRID_SIZE / 2 - 3, from_pos.y + GRID_SIZE / 2 - 3);
+
+    // ========== 2. 终点：红色嵌套边框 ==========
+    POINT to_pos = get_pos(last_to_r, last_to_c);
+    // 外层大矩形（红色粗边框）
+    setcolor(RGB(255, 100, 100));
+    rectangle(to_pos.x - GRID_SIZE / 2 + 1, to_pos.y - GRID_SIZE / 2 + 1,
+        to_pos.x + GRID_SIZE / 2 - 1, to_pos.y + GRID_SIZE / 2 - 1);
+    // 内层小矩形（白色，形成“粗边框”效果）
+    setcolor(WHITE);
+    rectangle(to_pos.x - GRID_SIZE / 2 + 3, to_pos.y - GRID_SIZE / 2 + 3,
+        to_pos.x + GRID_SIZE / 2 - 3, to_pos.y + GRID_SIZE / 2 - 3);
+
+    // 恢复原来的颜色
+    setcolor(old_color);
 }
 
 // --- 棋子绘制（含选中高亮） ---
@@ -262,6 +300,9 @@ void init_game() {
 void repaint_all() {
     cleardevice();
     draw_chessboard();
+    // ========== 新增：绘制上一步高亮 ==========
+    draw_last_step();
+    // ==========================================
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
             draw_piece(r, c);
@@ -527,6 +568,13 @@ bool is_general_alive(Color color) {
 
 // --- 执行棋子移动（仅保留落子/吃子音效） ---
 void move_piece(int from_r, int from_c, int to_r, int to_c) {
+    // ========== 新增：记录上一步走棋的起点和终点 ==========
+    last_from_r = from_r;
+    last_from_c = from_c;
+    last_to_r = to_r;
+    last_to_c = to_c;
+    has_last_step = true;
+    // ======================================================
     // 判断是否吃子
     bool is_eat = (board[to_r][to_c].color != CHESS_EMPTY);
 
