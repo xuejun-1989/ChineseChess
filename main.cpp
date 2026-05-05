@@ -12,6 +12,7 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include<vector>
 
 // --- 全局参数与类型定义 ---
 #define GRID_SIZE 60
@@ -559,43 +560,87 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
         turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
     }
 }
+// 棋子基础价值
+enum PieceValue {
+    VAL_GENERAL = 10000,
+    VAL_CHARIOT = 900,
+    VAL_CANNON = 450,
+    VAL_HORSE = 400,
+    VAL_ADVISOR = 200,
+    VAL_ELEPHANT = 200,
+    VAL_SOLDIER = 100
+};
 
-// --- AI逻辑：生成所有合法走法 ---
-void generate_all_moves(Color color, std::vector<ChessMove>& moves) {
+// 根据棋子类型拿价值
+int getPieceValue(Type t)
+{
+    switch (t)
+    {
+    case GENERAL:return VAL_GENERAL;
+    case CHARIOT:return VAL_CHARIOT;
+    case CANNON: return VAL_CANNON;
+    case HORSE:  return VAL_HORSE;
+    case ADVISOR:return VAL_ADVISOR;
+    case ELEPHANT:return VAL_ELEPHANT;
+    case SOLDIER:return VAL_SOLDIER;
+    default:return 0;
+    }
+}
+
+// 评估整个棋盘局势：黑方得分 - 红方得分
+int evaluate()
+{
+    int score = 0;
+    for (int r = 0;r < ROW_NUM;r++)
+    {
+        for (int c = 0;c < COL_NUM;c++)
+        {
+            ChessPiece p = board[r][c];
+            if (p.color == CHESS_EMPTY) continue;
+
+            int val = getPieceValue(p.type);
+            // 黑方加分、红方减分
+            if (p.color == CHESS_BLACK)
+            {
+                score += val;
+                // 黑方子往前推进额外加分
+                score += r * 2;
+            }
+            else
+            {
+                score -= val;
+                // 红方子往后退对黑方有利
+                score -= (9 - r) * 2;
+            }
+        }
+    }
+    // 被将军大幅扣分
+    if (is_checked(CHESS_BLACK)) score -= 800;
+    if (is_checked(CHESS_RED))  score += 800;
+
+    return score;
+}
+
+// 生成当前所有合法安全走法（修正：加上std::vector）
+void getAllLegalMoves(Color color, std::vector<ChessMove>& moves)
+{
     moves.clear();
-    for (int from_r = 0; from_r < ROW_NUM; from_r++) {
-        for (int from_c = 0; from_c < COL_NUM; from_c++) {
-            if (board[from_r][from_c].color != color) continue;
-
-            for (int to_r = 0; to_r < ROW_NUM; to_r++) {
-                for (int to_c = 0; to_c < COL_NUM; to_c++) {
-                    // AI的走法也必须合法且安全
-                    if (is_move_valid(from_r, from_c, to_r, to_c)
-                        && is_move_safe(from_r, from_c, to_r, to_c)) {
-                        ChessMove move;
-                        move.from_r = from_r;
-                        move.from_c = from_c;
-                        move.to_r = to_r;
-                        move.to_c = to_c;
-                        move.score = 0;
-
-                        ChessPiece target = board[to_r][to_c];
-                        if (target.color != CHESS_EMPTY) {
-                            switch (target.type) {
-                            case GENERAL: move.score = 10000; break;
-                            case CHARIOT: move.score = 500; break;
-                            case HORSE: move.score = 300; break;
-                            case CANNON: move.score = 300; break;
-                            case SOLDIER: move.score = 100; break;
-                            default: move.score = 50; break;
-                            }
-                        }
-                        else {
-                            if (color == CHESS_BLACK && to_r > from_r) {
-                                move.score += 10;
-                            }
-                        }
-                        moves.push_back(move);
+    for (int fr = 0;fr < ROW_NUM;fr++)
+    {
+        for (int fc = 0;fc < COL_NUM;fc++)
+        {
+            if (board[fr][fc].color != color) continue;
+            for (int tr = 0;tr < ROW_NUM;tr++)
+            {
+                for (int tc = 0;tc < COL_NUM;tc++)
+                {
+                    if (is_move_valid(fr, fc, tr, tc) && is_move_safe(fr, fc, tr, tc))
+                    {
+                        ChessMove m;
+                        m.from_r = fr; m.from_c = fc;
+                        m.to_r = tr;   m.to_c = tc;
+                        m.score = 0;
+                        moves.push_back(m);
                     }
                 }
             }
@@ -603,26 +648,117 @@ void generate_all_moves(Color color, std::vector<ChessMove>& moves) {
     }
 }
 
-// --- AI执行走棋 ---
-void ai_move() {
+// 模拟走棋（修正：参数和调用一致）
+void fakeMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar)
+{
+    oldTar = board[tr][tc];
+    board[tr][tc] = board[fr][fc];
+    board[fr][fc].color = CHESS_EMPTY;
+    board[fr][fc].type = TYPE_NONE;
+    board[fr][fc].show = false;
+}
+
+// 撤销模拟走棋（修正：参数和调用一致）
+void undoMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar)
+{
+    board[fr][fc] = board[tr][tc];
+    board[tr][tc] = oldTar;
+}
+
+// Alpha-Beta 剪枝核心（修正：加上std::vector）
+int alphaBeta(int depth, int alpha, int beta, bool isMaxTurn)
+{
+    // 深度到了直接评估局势
+    if (depth == 0)
+        return evaluate();
+
+    Color me = isMaxTurn ? CHESS_BLACK : CHESS_RED;
+    std::vector<ChessMove> moves;
+    getAllLegalMoves(me, moves);
+
+    // 无子可走，被判负
+    if (moves.empty())
+        return isMaxTurn ? -100000 : 100000;
+
+    if (isMaxTurn)
+    {
+        // MAX层：AI黑方 取最大分
+        int best = -999999;
+        for (auto& m : moves)
+        {
+            ChessPiece oldTar;
+            fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+            int val = alphaBeta(depth - 1, alpha, beta, false);
+            best = max(best, val);
+            alpha = max(alpha, best);
+
+            undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+            // Beta剪枝
+            if (beta <= alpha) break;
+        }
+        return best;
+    }
+    else
+    {
+        // MIN层：玩家红方 取最小分
+        int best = 999999;
+        for (auto& m : moves)
+        {
+            ChessPiece oldTar;
+            fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+            int val = alphaBeta(depth - 1, alpha, beta, true);
+            best = min(best, val);
+            beta = min(beta, best);
+
+            undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+            // Alpha剪枝
+            if (beta <= alpha) break;
+        }
+        return best;
+    }
+}
+
+// 废弃旧的生成走法，改用上面AlphaBeta（修正：加上std::vector）
+void generate_all_moves(Color color, std::vector<ChessMove>& moves)
+{
+    getAllLegalMoves(color, moves);
+}
+
+// 新版AI：用Alpha-Beta剪枝选最优步（修正：加上std::vector）
+void ai_move()
+{
     if (game_over || turn != CHESS_BLACK) return;
 
     std::vector<ChessMove> moves;
-    generate_all_moves(CHESS_BLACK, moves);
-
+    getAllLegalMoves(CHESS_BLACK, moves);
     if (moves.empty()) return;
 
-    int max_score = -1;
-    int best_index = 0;
-    for (int i = 0; i < moves.size(); i++) {
-        if (moves[i].score > max_score) {
-            max_score = moves[i].score;
-            best_index = i;
+    int bestVal = -999999;
+    ChessMove bestMove = moves[0];
+
+    // 遍历所有走法，选评分最高的
+    for (auto& m : moves)
+    {
+        ChessPiece oldTar;
+        fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+        // 搜索深度3：往前看3步，不卡又聪明
+        int val = alphaBeta(3, -999999, 999999, false);
+
+        undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
+
+        if (val > bestVal)
+        {
+            bestVal = val;
+            bestMove = m;
         }
     }
 
-    ChessMove best_move = moves[best_index];
-    move_piece(best_move.from_r, best_move.from_c, best_move.to_r, best_move.to_c);
+    move_piece(bestMove.from_r, bestMove.from_c, bestMove.to_r, bestMove.to_c);
     repaint_all();
 }
 
