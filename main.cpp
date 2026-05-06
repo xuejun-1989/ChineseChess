@@ -149,6 +149,7 @@ bool show_jack_form = false;
 IMAGE img_fog_active, img_fog_disable;
 IMAGE img_invis_active, img_invis_disable;
 IMAGE img_jack_fog, img_jack_invis;
+IMAGE img_fog_slash;   // 雾刃飞行动画图片
 IMAGE img_hover_mask;  // 半透明白色遮罩 (100x50)
 bool img_load_success = false; // 图片加载成功标记
 // ==============================================
@@ -350,8 +351,9 @@ void init_game() {
     // 加载杰克棋子图片，固定50x50
     loadimage(&img_jack_fog, _T("jack_fog.png"), 50, 50);
     loadimage(&img_jack_invis, _T("jack_invisible.png"), 50, 50);
-
-    // 判断图片是否加载成功
+    //雾刃图
+    loadimage(&img_fog_slash, _T("fog_slash.png"), 0, 0);  
+    
     img_load_success = (img_fog_active.getwidth()  > 0);
     // ==============================================
     // 初始化技能按钮
@@ -554,12 +556,13 @@ void repaint_all() {
     }
     // ==================================================
 
-    // 绘制雾刃动画
-    if (fog_blade.is_flying) {
+ // 绘制雾刃动画（使用透明图片）
+    if (fog_blade.is_flying && img_fog_slash.getwidth() > 0) {
         POINT pos = get_pos(fog_blade.current_r, fog_blade.current_c);
-        setfillcolor(RGB(0, 100, 200));
-        setcolor(RGB(0, 50, 150));
-        fillcircle(pos.x, pos.y, 20);
+        // 图片 50x50 居中绘制（假设图片尺寸为 50x50，如果不是请调整）
+        int drawX = pos.x - img_fog_slash.getwidth() / 2;
+        int drawY = pos.y - img_fog_slash.getheight() / 2;
+        putimage_alpha(drawX, drawY, &img_fog_slash);
     }
 
     FlushBatchDraw();
