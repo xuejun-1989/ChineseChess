@@ -1,4 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS
+
 // ========== 音效依赖 ==========
 #include <Windows.h>
 #include <mmsystem.h>
@@ -17,11 +17,12 @@
 // --- 全局参数与类型定义 ---
 #define GRID_SIZE 60
 #define LEFT_MARGIN 80
-#define TOP_MARGIN 80
+#define TOP_MARGIN 110
 #define ROW_NUM 10
 #define COL_NUM 9
 #define WINDOW_WIDTH 720
 #define WINDOW_HEIGHT 800
+#define _CRT_SECURE_NO_WARNINGS
 
 // 棋子颜色
 enum Color { CHESS_RED, CHESS_BLACK, CHESS_EMPTY };
@@ -160,6 +161,7 @@ IMAGE img_jack_fog, img_jack_invis;
 IMAGE img_fog_slash;   // 雾刃飞行动画图片
 IMAGE img_hover_mask;  // 半透明白色遮罩 (100x50)
 IMAGE img_undo;
+IMAGE img_board_bg;   // 棋盘背景图
 bool img_load_success = false; // 图片加载成功标记
 // ==============================================
 
@@ -207,7 +209,7 @@ bool is_point_in_button(int x, int y, Button btn) {
 
 // --- 棋盘绘制 ---
 void draw_chessboard() {
-    setlinecolor(BLACK);
+    setlinecolor(WHITE);
     setlinestyle(PS_SOLID, 2);
     // 横线
     for (int i = 0; i < ROW_NUM; i++) {
@@ -225,7 +227,7 @@ void draw_chessboard() {
         line(p_mid.x, p_mid.y, p_end.x, p_end.y);
     }
     // 楚河汉界文字
-    settextcolor(BLACK);
+    settextcolor(WHITE);
     setbkmode(TRANSPARENT);
     settextstyle(30, 0, _T("楷体"));
     outtextxy(LEFT_MARGIN + GRID_SIZE * 2, TOP_MARGIN + GRID_SIZE * 4 + 15, _T("楚 河"));
@@ -357,6 +359,7 @@ void init_game() {
     loadimage(&img_fog_disable, _T("fog_blade_disable.png"), 0, 0);
     loadimage(&img_invis_active, _T("invisible_active.png"), 0, 0);
     loadimage(&img_invis_disable, _T("invisible_disable.png"), 0, 0);
+    loadimage(&img_board_bg, _T("board_bg.png"), WINDOW_WIDTH, WINDOW_HEIGHT);
     // 加载杰克棋子图片，固定50x50
     loadimage(&img_jack_fog, _T("jack_fog.png"), 50, 50);
     loadimage(&img_jack_invis, _T("jack_invisible.png"), 50, 50);
@@ -471,6 +474,9 @@ void init_game() {
 // --- 全局画面重绘（含图片按钮绘制）---
 void repaint_all() {
     cleardevice();
+    if (img_board_bg.getwidth() > 0) {
+        putimage(0, 0, &img_board_bg);
+    }
     draw_chessboard();
     draw_last_step();
     for (int r = 0; r < ROW_NUM; r++) {
