@@ -52,15 +52,6 @@ struct Button {
     bool is_hover;
     GameMode mode;
 };
-struct StepRecord {
-    int from_r, from_c;
-    int to_r, to_c;
-    ChessPiece old_target;
-    Color old_turn;
-    bool old_game_over;
-    int last_fr, last_fc, last_tr, last_tc;
-    bool has_last;
-};
 struct UndoButton {
     int x, y, w, h;
     TCHAR text[16];
@@ -78,6 +69,23 @@ struct FogBladeState {
     int current_c;
     int direction;
     int frame_count;
+};
+
+enum MoveType { MOVE_NORMAL, MOVE_FOG, MOVE_INVISIBLE };
+
+struct StepRecord {
+    int from_r, from_c;
+    int to_r, to_c;
+    ChessPiece old_target;
+    Color old_turn;
+    bool old_game_over;
+    int last_fr, last_fc, last_tr, last_tc;
+    bool has_last;
+    MoveType move_type;               // 新增
+    bool old_show_jack;               // 恢复杰克形态显示
+    bool old_invisible;               // 恢复隐身模式
+    int old_skill_r, old_skill_c;     // 恢复选中棋子
+    bool old_fog_active, old_invis_active; // 恢复按钮激活
 };
 // =====================================================================================
 
@@ -151,6 +159,7 @@ IMAGE img_invis_active, img_invis_disable;
 IMAGE img_jack_fog, img_jack_invis;
 IMAGE img_fog_slash;   // 雾刃飞行动画图片
 IMAGE img_hover_mask;  // 半透明白色遮罩 (100x50)
+IMAGE img_undo;
 bool img_load_success = false; // 图片加载成功标记
 // ==============================================
 
@@ -354,6 +363,8 @@ void init_game() {
     //雾刃图
     loadimage(&img_fog_slash, _T("fog_slash.png"), 0, 0);  
     
+    loadimage(&img_undo, _T("undo.png"), 0, 0);   // 按钮大小
+    
     img_load_success = (img_fog_active.getwidth()  > 0);
     // ==============================================
     // 初始化技能按钮
@@ -432,12 +443,12 @@ void init_game() {
     SET_PIECE(6, 8, CHESS_RED, SOLDIER);
 
     // ========== 生成半透明悬停遮罩 ==========
-    img_hover_mask.Resize(50, 50);                     // 与按钮同大
+    img_hover_mask.Resize(75, 75);                     // 与按钮同大
     DWORD* buf = GetImageBuffer(&img_hover_mask);
     if (buf) {
         // 构造带 Alpha 的白色像素 (A=80, B=255, G=255, R=255)
         DWORD color = (80 << 24) | (255 << 16) | (255 << 8) | 255;
-        int total = 50 * 50;
+        int total = 75 * 75;
         for (int i = 0; i < total; i++) {
             buf[i] = color;
         }
@@ -499,16 +510,26 @@ void repaint_all() {
         }
     }
 
-    // 绘制悔棋按钮
-    setfillcolor(undo_btn.hover ? RGB(255, 200, 200) : RGB(255, 230, 230));
-    setcolor(BLACK);
-    fillrectangle(undo_btn.x, undo_btn.y, undo_btn.x + undo_btn.w, undo_btn.y + undo_btn.h);
-    settextcolor(BLACK);
-    setbkmode(TRANSPARENT);
-    settextstyle(24, 0, _T("黑体"));
-    int tx = undo_btn.x + (undo_btn.w - textwidth(undo_btn.text)) / 2;
-    int ty = undo_btn.y + (undo_btn.h - textheight(undo_btn.text)) / 2;
-    outtextxy(tx, ty, undo_btn.text);
+    // 绘制悔棋按钮（用图片）
+    if (img_undo.getwidth() > 0) {
+        putimage_alpha(undo_btn.x, undo_btn.y, &img_undo);
+        // 悬停半透明遮罩（与技能按钮相同）
+        if (undo_btn.hover) {
+            putimage_alpha(undo_btn.x, undo_btn.y, &img_hover_mask);
+        }
+    }
+    else {
+        // 兜底：没加载到图片时用文字按钮
+        setfillcolor(undo_btn.hover ? RGB(255, 200, 200) : RGB(255, 230, 230));
+        setcolor(BLACK);
+        fillrectangle(undo_btn.x, undo_btn.y, undo_btn.x + undo_btn.w, undo_btn.y + undo_btn.h);
+        settextcolor(BLACK);
+        setbkmode(TRANSPARENT);
+        settextstyle(24, 0, _T("黑体"));
+        int tx = undo_btn.x + (undo_btn.w - textwidth(undo_btn.text)) / 2;
+        int ty = undo_btn.y + (undo_btn.h - textheight(undo_btn.text)) / 2;
+        outtextxy(tx, ty, undo_btn.text);
+    }
 
     // ========== 【修改】绘制技能按钮（用图片）==========
 // 1. 雾刃按钮
@@ -784,6 +805,13 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
     rec.last_fr = last_from_r; rec.last_fc = last_from_c;
     rec.last_tr = last_to_r; rec.last_tc = last_to_c;
     rec.has_last = has_last_step;
+    rec.move_type = MOVE_NORMAL;
+    rec.old_show_jack = show_jack_form;
+    rec.old_invisible = invisible_mode;
+    rec.old_skill_r = skill_piece_r;
+    rec.old_skill_c = skill_piece_c;
+    rec.old_fog_active = btn_fog_blade.is_active;
+    rec.old_invis_active = btn_invisible.is_active;
     move_history.push_back(rec);
 
     last_from_r = from_r; last_from_c = from_c;
@@ -817,12 +845,30 @@ void undo_move() {
     StepRecord rec = move_history.back();
     move_history.pop_back();
 
-    board[rec.from_r][rec.from_c] = board[rec.to_r][rec.to_c];
-    board[rec.to_r][rec.to_c] = rec.old_target;
+    // 恢复棋盘
+    if (rec.move_type == MOVE_FOG) {
+        // 雾刃：只恢复目标位置的棋子，源位置不动
+        board[rec.to_r][rec.to_c] = rec.old_target;
+    }
+    else {
+        // 普通走棋 / 隐身移动：标准恢复
+        board[rec.from_r][rec.from_c] = board[rec.to_r][rec.to_c];
+        board[rec.to_r][rec.to_c] = rec.old_target;
+    }
 
+    // 恢复全局游戏状态
     turn = rec.old_turn;
     game_over = rec.old_game_over;
 
+    // 恢复特殊机制状态
+    show_jack_form = rec.old_show_jack;
+    invisible_mode = rec.old_invisible;
+    skill_piece_r = rec.old_skill_r;
+    skill_piece_c = rec.old_skill_c;
+    btn_fog_blade.is_active = rec.old_fog_active;
+    btn_invisible.is_active = rec.old_invis_active;
+
+    // 恢复上一步高亮
     last_from_r = rec.last_fr;
     last_from_c = rec.last_fc;
     last_to_r = rec.last_tr;
@@ -881,6 +927,13 @@ void update_fog_blade() {
             rec.last_fr = last_from_r; rec.last_fc = last_from_c;
             rec.last_tr = last_to_r; rec.last_tc = last_to_c;
             rec.has_last = has_last_step;
+            rec.move_type = MOVE_FOG;
+            rec.old_show_jack = show_jack_form;
+            rec.old_invisible = false;   // 雾刃时没有隐身
+            rec.old_skill_r = skill_piece_r;
+            rec.old_skill_c = skill_piece_c;
+            rec.old_fog_active = btn_fog_blade.is_active;
+            rec.old_invis_active = btn_invisible.is_active;
             move_history.push_back(rec);
 
             if (board[fog_blade.current_r][fog_blade.current_c].type == GENERAL) {
@@ -927,6 +980,13 @@ void execute_invisible_move(int to_r, int to_c) {
     rec.last_fr = last_from_r; rec.last_fc = last_from_c;
     rec.last_tr = last_to_r; rec.last_tc = last_to_c;
     rec.has_last = has_last_step;
+    rec.move_type = MOVE_INVISIBLE;
+    rec.old_show_jack = show_jack_form;
+    rec.old_invisible = invisible_mode;
+    rec.old_skill_r = skill_piece_r;
+    rec.old_skill_c = skill_piece_c;
+    rec.old_fog_active = btn_fog_blade.is_active;
+    rec.old_invis_active = btn_invisible.is_active;
     move_history.push_back(rec);
 
     board[to_r][to_c] = board[skill_piece_r][skill_piece_c];
@@ -1221,6 +1281,16 @@ int main() {
 
             if (msg.message == WM_LBUTTONDOWN) {
                 if (invisible_mode) {
+                    // 首先检查是否再次点击了“隐身”按钮 → 取消隐身
+                    if (btn_invisible.is_hover) {  // 按钮 hover 状态已在前面更新
+                        invisible_mode = false;
+                        show_jack_form = false;
+                        // 按钮仍然可用，因为选中棋子不变，技能可以重新激活
+                        repaint_all();
+                        continue;
+                    }
+
+                    // 否则处理隐身移动
                     int cr, cc;
                     if (click_to_board(msg.x, msg.y, cr, cc)) {
                         if (board[cr][cc].color == CHESS_EMPTY) {
@@ -1236,11 +1306,16 @@ int main() {
                 }
 
                 if (btn_fog_blade.is_active && btn_fog_blade.is_hover) {
-                    activate_fog_blade();
+                    // 弹出确认对话框
+                    if (MessageBox(GetHWnd(), _T("是否要使用超模雾刃？"), _T("确认"), MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                        activate_fog_blade();
+                    }
+                    // 无论确认与否，都跳过后续棋盘点击处理
                     continue;
                 }
 
                 if (btn_invisible.is_active && btn_invisible.is_hover) {
+                    // 此时 invisible_mode 必然为 false（因为该变量为真时已在上面处理）
                     activate_invisible();
                     continue;
                 }
