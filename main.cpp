@@ -4,6 +4,7 @@
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 // ==============================
+#pragma comment(lib, "msimg32.lib") // 提供 AlphaBlend 函数
 #include <graphics.h>
 #include <conio.h>
 #include <cstring>
@@ -29,14 +30,12 @@ enum Type { GENERAL, ADVISOR, ELEPHANT, HORSE, CHARIOT, CANNON, SOLDIER, TYPE_NO
 // 游戏模式
 enum GameMode { MODE_TWO_PLAYER, MODE_AI, MODE_NONE };
 
-// 棋子结构体
+// ===================== 结构体声明（顺序固定，修复未定义错误）=====================
 struct ChessPiece {
     Color color;
     Type type;
     bool show;
 };
-
-// 走法结构体（AI用）
 struct ChessMove {
     int from_r;
     int from_c;
@@ -44,8 +43,6 @@ struct ChessMove {
     int to_c;
     int score;
 };
-
-// 按钮结构体（模式选择界面用）
 struct Button {
     int x;
     int y;
@@ -55,44 +52,6 @@ struct Button {
     bool is_hover;
     GameMode mode;
 };
-
-// ========== 函数前置声明 ==========
-POINT find_general_pos(Color color);
-bool is_checked(Color color);
-bool is_move_safe(int from_r, int from_c, int to_r, int to_c);
-// ==================================
-
-// 全局状态变量
-ChessPiece board[ROW_NUM][COL_NUM];
-int selected_row = -1;
-int selected_col = -1;
-bool is_selected = false;
-Color turn = CHESS_RED;
-GameMode game_mode = MODE_NONE;
-bool game_over = false;
-TCHAR game_result[64];
-// 上一步走棋的高亮记录（新增）
-int last_from_r = -1;
-int last_from_c = -1;
-int last_to_r = -1;
-int last_to_c = -1;
-bool has_last_step = false;
-
-// ===================== 悔棋按钮（新增） =====================
-struct UndoButton {
-    int x, y, w, h;
-    TCHAR text[16];
-    bool hover;
-} undo_btn = {
-    610,   // X坐标（棋盘右侧）
-    120,   // Y坐标
-    100,   // 宽度
-    50,    // 高度
-    _T("悔棋"),
-    false
-};
-
-// 悔棋历史记录（保留）
 struct StepRecord {
     int from_r, from_c;
     int to_r, to_c;
@@ -102,26 +61,129 @@ struct StepRecord {
     int last_fr, last_fc, last_tr, last_tc;
     bool has_last;
 };
+struct UndoButton {
+    int x, y, w, h;
+    TCHAR text[16];
+    bool hover;
+};
+struct SkillButton {
+    int x, y, w, h;
+    TCHAR text[16];
+    bool is_active;
+    bool is_hover;
+};
+struct FogBladeState {
+    bool is_flying;
+    int current_r;
+    int current_c;
+    int direction;
+    int frame_count;
+};
+// =====================================================================================
+
+// ========== 函数前置声明 ==========
+POINT get_pos(int row, int col);
+bool is_point_in_button(int x, int y, Button btn);
+void draw_chessboard();
+void draw_last_step();
+void draw_piece(int row, int col);
+void init_game();
+void repaint_all();
+bool click_to_board(int x, int y, int& row, int& col);
+int count_pieces_between(int r1, int c1, int r2, int c2);
+bool is_move_valid(int from_r, int from_c, int to_r, int to_c);
+POINT find_general_pos(Color color);
+bool is_checked(Color color);
+bool is_move_safe(int from_r, int from_c, int to_r, int to_c);
+bool is_general_alive(Color color);
+void move_piece(int from_r, int from_c, int to_r, int to_c);
+void undo_move();
+bool is_in_undo_btn(int x, int y);
+int getPieceValue(Type t);
+int evaluate();
+void getAllLegalMoves(Color color, std::vector<ChessMove>& moves);
+void fakeMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar);
+void undoMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar);
+int alphaBeta(int depth, int alpha, int beta, bool isMaxTurn);
+void ai_move();
+void select_game_mode();
+// 杰克技能函数
+void activate_fog_blade();
+void update_fog_blade();
+void activate_invisible();
+void execute_invisible_move(int to_r, int to_c);
+// ==================================
+
+// ===================== 全局状态变量（仅定义一次，无重定义）=====================
+ChessPiece board[ROW_NUM][COL_NUM];
+int selected_row = -1;
+int selected_col = -1;
+bool is_selected = false;
+Color turn = CHESS_RED;
+GameMode game_mode = MODE_NONE;
+bool game_over = false;
+TCHAR game_result[64];
+
+// 上一步走棋高亮
+int last_from_r = -1;
+int last_from_c = -1;
+int last_to_r = -1;
+int last_to_c = -1;
+bool has_last_step = false;
+
+// 悔棋按钮
+UndoButton undo_btn = { 610, 120, 100, 50, _T("悔棋"), false };
 std::vector<StepRecord> move_history;
 
-// ========== 仅支持落子/吃子MP3音效 ==========
+// 杰克技能全局变量
+SkillButton btn_fog_blade;
+SkillButton btn_invisible;
+FogBladeState fog_blade = { false, -1, -1, 0, 0 };
+bool skill_mode = false;
+bool invisible_mode = false;
+int skill_piece_r = -1;
+int skill_piece_c = -1;
+bool show_jack_form = false;
+
+// ========== 【新增】技能图片全局变量 ==========
+IMAGE img_fog_active, img_fog_disable;
+IMAGE img_invis_active, img_invis_disable;
+IMAGE img_jack_fog, img_jack_invis;
+IMAGE img_hover_mask;  // 半透明白色遮罩 (100x50)
+bool img_load_success = false; // 图片加载成功标记
+// ==============================================
+
+// EasyX 透明绘图函数 (使用 GDI AlphaBlend 实现)
+void putimage_alpha(int x, int y, IMAGE* pSrcImg)
+{
+    if (!pSrcImg) return;
+
+    // 获取窗口的 HDC（即绘制目标）
+    HDC hdc = GetImageHDC(NULL);
+    // 获取源图像的 HDC（它的所有绘图信息都在这里）
+    HDC hdcSrc = GetImageHDC(pSrcImg);
+
+    // 设置混合模式：使用源图像的 Alpha 通道
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+
+    // 执行带透明通道的绘制
+    AlphaBlend(hdc, x, y, pSrcImg->getwidth(), pSrcImg->getheight(),
+        hdcSrc, 0, 0, pSrcImg->getwidth(), pSrcImg->getheight(),
+        bf);
+
+    // 注意：不要释放 GetImageHDC 返回的 DC，EasyX 内部会自行管理
+}
+
+// ========== 音效播放函数 ==========
 void play_sound(LPCTSTR sound_file) {
     TCHAR cmd[512];
-    // 先关闭之前的播放，避免冲突
     mciSendString(_T("close all"), NULL, 0, NULL);
-    // 拼接打开命令，兼容相对路径
     _stprintf_s(cmd, _T("open \"%s\" type mpegvideo alias sound"), sound_file);
-    // 执行打开，失败直接返回，不影响游戏运行
-    if (mciSendString(cmd, NULL, 0, NULL) != 0) {
-        return;
-    }
-    // 从头播放音效
+    if (mciSendString(cmd, NULL, 0, NULL) != 0) return;
     mciSendString(_T("play sound from 0"), NULL, 0, NULL);
 }
-// ==========================================
 
 // --- 辅助工具函数 ---
-// 坐标转换：棋盘行列 → 窗口像素
 POINT get_pos(int row, int col) {
     POINT p;
     p.x = LEFT_MARGIN + col * GRID_SIZE;
@@ -129,7 +191,6 @@ POINT get_pos(int row, int col) {
     return p;
 }
 
-// 判断鼠标是否在按钮内
 bool is_point_in_button(int x, int y, Button btn) {
     return x >= btn.x && x <= btn.x + btn.width && y >= btn.y && y <= btn.y + btn.height;
 }
@@ -138,32 +199,27 @@ bool is_point_in_button(int x, int y, Button btn) {
 void draw_chessboard() {
     setlinecolor(BLACK);
     setlinestyle(PS_SOLID, 2);
-
     // 横线
     for (int i = 0; i < ROW_NUM; i++) {
         POINT p_start = get_pos(i, 0);
         POINT p_end = get_pos(i, COL_NUM - 1);
         line(p_start.x, p_start.y, p_end.x, p_end.y);
     }
-
-    // 竖线（楚河汉界处断开）
+    // 竖线（楚河汉界断开）
     for (int i = 0; i < COL_NUM; i++) {
         POINT p_start = get_pos(0, i);
         POINT p_mid = get_pos(4, i);
         line(p_start.x, p_start.y, p_mid.x, p_mid.y);
-
         p_mid = get_pos(5, i);
         POINT p_end = get_pos(ROW_NUM - 1, i);
         line(p_mid.x, p_mid.y, p_end.x, p_end.y);
     }
-
     // 楚河汉界文字
     settextcolor(BLACK);
     setbkmode(TRANSPARENT);
     settextstyle(30, 0, _T("楷体"));
     outtextxy(LEFT_MARGIN + GRID_SIZE * 2, TOP_MARGIN + GRID_SIZE * 4 + 15, _T("楚 河"));
     outtextxy(LEFT_MARGIN + GRID_SIZE * 5, TOP_MARGIN + GRID_SIZE * 4 + 15, _T("汉 界"));
-
     // 九宫格斜线
     line(get_pos(0, 3).x, get_pos(0, 3).y, get_pos(2, 5).x, get_pos(2, 5).y);
     line(get_pos(0, 5).x, get_pos(0, 5).y, get_pos(2, 3).x, get_pos(2, 3).y);
@@ -171,44 +227,33 @@ void draw_chessboard() {
     line(get_pos(7, 5).x, get_pos(7, 5).y, get_pos(9, 3).x, get_pos(9, 3).y);
 }
 
-// 绘制上一步走棋的高亮
+// 绘制上一步走棋高亮
 void draw_last_step() {
     if (!has_last_step) return;
-
-    // 保存原来的颜色
     COLORREF old_color = getcolor();
-
-    // ========== 1. 起点：蓝色嵌套边框 ==========
+    // 起点蓝色边框
     POINT from_pos = get_pos(last_from_r, last_from_c);
-    // 外层大矩形（蓝色粗边框）
     setcolor(RGB(0, 150, 255));
     rectangle(from_pos.x - GRID_SIZE / 2 + 1, from_pos.y - GRID_SIZE / 2 + 1,
         from_pos.x + GRID_SIZE / 2 - 1, from_pos.y + GRID_SIZE / 2 - 1);
-    // 内层小矩形（白色，和背景色接近，形成“粗边框”效果）
     setcolor(WHITE);
     rectangle(from_pos.x - GRID_SIZE / 2 + 3, from_pos.y - GRID_SIZE / 2 + 3,
         from_pos.x + GRID_SIZE / 2 - 3, from_pos.y + GRID_SIZE / 2 - 3);
-
-    // ========== 2. 终点：红色嵌套边框 ==========
+    // 终点红色边框
     POINT to_pos = get_pos(last_to_r, last_to_c);
-    // 外层大矩形（红色粗边框）
     setcolor(RGB(255, 100, 100));
     rectangle(to_pos.x - GRID_SIZE / 2 + 1, to_pos.y - GRID_SIZE / 2 + 1,
         to_pos.x + GRID_SIZE / 2 - 1, to_pos.y + GRID_SIZE / 2 - 1);
-    // 内层小矩形（白色，形成“粗边框”效果）
     setcolor(WHITE);
     rectangle(to_pos.x - GRID_SIZE / 2 + 3, to_pos.y - GRID_SIZE / 2 + 3,
         to_pos.x + GRID_SIZE / 2 - 3, to_pos.y + GRID_SIZE / 2 - 3);
-
-    // 恢复原来的颜色
     setcolor(old_color);
 }
 
-// --- 棋子绘制（含选中高亮） ---
+// --- 棋子绘制（含杰克图片形态）---
 void draw_piece(int row, int col) {
     ChessPiece p = board[row][col];
     if (p.color == CHESS_EMPTY || !p.show) return;
-
     POINT pos = get_pos(row, col);
     int radius = GRID_SIZE / 2 - 5;
 
@@ -219,13 +264,48 @@ void draw_piece(int row, int col) {
         circle(pos.x, pos.y, radius + 3);
     }
 
-    // 棋子底色+边框
+    // ========== 杰克形态：用你准备的图片绘制 ==========
+    if (show_jack_form && row == skill_piece_r && col == skill_piece_c) {
+        // 雾刃用jack_fog.png，隐身用jack_invisible.png
+        IMAGE* use_jack = invisible_mode ? &img_jack_invis : &img_jack_fog;
+        if (img_load_success) {
+            // 50x50图片居中绘制
+            putimage_alpha(pos.x - 25, pos.y - 25, use_jack);
+        }
+        // 图片加载失败兜底：紫色杰克
+        else {
+            setfillcolor(RGB(128, 0, 128));
+            setlinecolor(BLACK);
+            fillcircle(pos.x, pos.y, radius);
+            settextcolor(WHITE);
+            setbkmode(TRANSPARENT);
+            settextstyle(20, 0, _T("黑体"));
+            outtextxy(pos.x - 10, pos.y - 10, _T("J"));
+        }
+        return;
+    }
+
+    // 隐身状态：半透明图片
+    if (invisible_mode && row == skill_piece_r && col == skill_piece_c) {
+        if (img_load_success) {
+            putimage_alpha(pos.x - 25, pos.y - 25, &img_jack_invis);
+        }
+        else {
+            setfillcolor(RGB(200, 200, 200));
+            setlinecolor(RGB(150, 150, 150));
+            setlinestyle(PS_DASH, 2);
+            fillcircle(pos.x, pos.y, radius);
+        }
+        return;
+    }
+    // ==================================================
+
+    // 普通棋子绘制
     setfillcolor(RGB(255, 250, 200));
     setlinecolor(BLACK);
     setlinestyle(PS_SOLID, 2);
     fillcircle(pos.x, pos.y, radius);
 
-    // 棋子文字
     TCHAR text[4];
     if (p.color == CHESS_RED) {
         switch (p.type) {
@@ -252,7 +332,6 @@ void draw_piece(int row, int col) {
         settextcolor(RGB(0, 0, 0));
     }
 
-    // 文字居中绘制
     setbkmode(TRANSPARENT);
     settextstyle(36, 0, _T("楷体"));
     int tx = pos.x - textwidth(text) / 2;
@@ -260,8 +339,46 @@ void draw_piece(int row, int col) {
     outtextxy(tx, ty, text);
 }
 
-// --- 游戏初始化 ---
+// --- 游戏初始化（含图片加载）---
 void init_game() {
+    // ========== 加载技能图片 ==========
+    // 加载按钮图片，固定100x50尺寸，自动拉伸适配
+    loadimage(&img_fog_active, _T("fog_blade_active.png"), 0, 0);
+    loadimage(&img_fog_disable, _T("fog_blade_disable.png"), 0, 0);
+    loadimage(&img_invis_active, _T("invisible_active.png"), 0, 0);
+    loadimage(&img_invis_disable, _T("invisible_disable.png"), 0, 0);
+    // 加载杰克棋子图片，固定50x50
+    loadimage(&img_jack_fog, _T("jack_fog.png"), 50, 50);
+    loadimage(&img_jack_invis, _T("jack_invisible.png"), 50, 50);
+
+    // 判断图片是否加载成功
+    img_load_success = (img_fog_active.getwidth()  > 0);
+    // ==============================================
+    // 初始化技能按钮
+    btn_fog_blade.x = 610;
+    btn_fog_blade.y = 200;
+    btn_fog_blade.w = 50;
+    btn_fog_blade.h = 50;
+    _tcscpy_s(btn_fog_blade.text, _countof(btn_fog_blade.text), _T("雾刃"));
+    btn_fog_blade.is_active = false;
+    btn_fog_blade.is_hover = false;
+
+    btn_invisible.x = 610;
+    btn_invisible.y = 280;
+    btn_invisible.w = 50;
+    btn_invisible.h = 50;
+    _tcscpy_s(btn_invisible.text, _countof(btn_invisible.text), _T("隐身"));
+    btn_invisible.is_active = false;
+    btn_invisible.is_hover = false;
+
+    // 重置技能状态
+    fog_blade = { false, -1, -1, 0, 0 };
+    skill_mode = false;
+    invisible_mode = false;
+    skill_piece_r = -1;
+    skill_piece_c = -1;
+    show_jack_form = false;
+
     // 清空棋盘
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
@@ -312,7 +429,20 @@ void init_game() {
     SET_PIECE(6, 6, CHESS_RED, SOLDIER);
     SET_PIECE(6, 8, CHESS_RED, SOLDIER);
 
-    // 重置状态
+    // ========== 生成半透明悬停遮罩 ==========
+    img_hover_mask.Resize(50, 50);                     // 与按钮同大
+    DWORD* buf = GetImageBuffer(&img_hover_mask);
+    if (buf) {
+        // 构造带 Alpha 的白色像素 (A=80, B=255, G=255, R=255)
+        DWORD color = (80 << 24) | (255 << 16) | (255 << 8) | 255;
+        int total = 50 * 50;
+        for (int i = 0; i < total; i++) {
+            buf[i] = color;
+        }
+    }
+    // ==========================================
+    
+    // 重置游戏状态
     selected_row = -1;
     selected_col = -1;
     is_selected = false;
@@ -320,15 +450,16 @@ void init_game() {
     game_over = false;
     memset(game_result, 0, sizeof(game_result));
     srand((unsigned int)time(NULL));
+    move_history.clear();
+    last_from_r = last_from_c = last_to_r = last_to_c = -1;
+    has_last_step = false;
 }
 
-// --- 全局画面重绘（双缓冲无闪屏） ---
+// --- 全局画面重绘（含图片按钮绘制）---
 void repaint_all() {
     cleardevice();
     draw_chessboard();
-    // ========== 新增：绘制上一步高亮 ==========
     draw_last_step();
-    // ==========================================
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
             draw_piece(r, c);
@@ -350,10 +481,8 @@ void repaint_all() {
         else {
             outtextxy(100, 20, _T("模式：人机对战（你是红方）"));
         }
-        // 回合提示
         if (turn == CHESS_RED) {
             outtextxy(100, 50, _T("当前回合：红方"));
-            // 红方被将军提示
             if (is_checked(CHESS_RED)) {
                 settextcolor(RED);
                 outtextxy(100, 80, _T("警告！红方被将军！"));
@@ -361,14 +490,14 @@ void repaint_all() {
         }
         else {
             outtextxy(100, 50, _T("当前回合：黑方"));
-            // 黑方被将军提示
             if (is_checked(CHESS_BLACK)) {
                 settextcolor(RED);
                 outtextxy(100, 80, _T("警告！黑方被将军！"));
             }
         }
     }
-    // ===================== 绘制悔棋按钮 =====================
+
+    // 绘制悔棋按钮
     setfillcolor(undo_btn.hover ? RGB(255, 200, 200) : RGB(255, 230, 230));
     setcolor(BLACK);
     fillrectangle(undo_btn.x, undo_btn.y, undo_btn.x + undo_btn.w, undo_btn.y + undo_btn.h);
@@ -378,10 +507,65 @@ void repaint_all() {
     int tx = undo_btn.x + (undo_btn.w - textwidth(undo_btn.text)) / 2;
     int ty = undo_btn.y + (undo_btn.h - textheight(undo_btn.text)) / 2;
     outtextxy(tx, ty, undo_btn.text);
+
+    // ========== 【修改】绘制技能按钮（用图片）==========
+// 1. 雾刃按钮
+    if (img_load_success) {
+        IMAGE* use_img = btn_fog_blade.is_active ? &img_fog_active : &img_fog_disable;
+        putimage_alpha(btn_fog_blade.x, btn_fog_blade.y, use_img);
+        // 悬停时画半透明遮罩
+        if (btn_fog_blade.is_hover && btn_fog_blade.is_active) {
+            putimage_alpha(btn_fog_blade.x, btn_fog_blade.y, &img_hover_mask);
+        }
+    }
+    // 图片加载失败兜底：纯色按钮
+    else {
+        COLORREF fb_color = btn_fog_blade.is_active ? RGB(100, 150, 255) : RGB(150, 150, 150);
+        COLORREF fb_hover = btn_fog_blade.is_active ? RGB(150, 180, 255) : RGB(180, 180, 180);
+        setfillcolor(btn_fog_blade.is_hover ? fb_hover : fb_color);
+        setcolor(BLACK);
+        fillrectangle(btn_fog_blade.x, btn_fog_blade.y, btn_fog_blade.x + btn_fog_blade.w, btn_fog_blade.y + btn_fog_blade.h);
+        settextcolor(btn_fog_blade.is_active ? WHITE : RGB(100, 100, 100));
+        setbkmode(TRANSPARENT);
+        settextstyle(20, 0, _T("黑体"));
+        int ftx = btn_fog_blade.x + (btn_fog_blade.w - textwidth(btn_fog_blade.text)) / 2;
+        int fty = btn_fog_blade.y + (btn_fog_blade.h - textheight(btn_fog_blade.text)) / 2;
+        outtextxy(ftx, fty, btn_fog_blade.text);
+    }
+
+    // 2. 隐身按钮
+    if (img_load_success) {
+        IMAGE* use_img = btn_invisible.is_active ? &img_invis_active : &img_invis_disable;
+        putimage_alpha(btn_invisible.x, btn_invisible.y, use_img);
+        if (btn_invisible.is_hover && btn_invisible.is_active) {
+            putimage_alpha(btn_invisible.x, btn_invisible.y, &img_hover_mask);
+        }
+    }
+    // 图片加载失败兜底：纯色按钮
+    else {
+        COLORREF inv_color = btn_invisible.is_active ? RGB(200, 150, 255) : RGB(150, 150, 150);
+        COLORREF inv_hover = btn_invisible.is_active ? RGB(220, 180, 255) : RGB(180, 180, 180);
+        setfillcolor(btn_invisible.is_hover ? inv_hover : inv_color);
+        fillrectangle(btn_invisible.x, btn_invisible.y, btn_invisible.x + btn_invisible.w, btn_invisible.y + btn_invisible.h);
+        settextcolor(btn_invisible.is_active ? WHITE : RGB(100, 100, 100));
+        int itx = btn_invisible.x + (btn_invisible.w - textwidth(btn_invisible.text)) / 2;
+        int ity = btn_invisible.y + (btn_invisible.h - textheight(btn_invisible.text)) / 2;
+        outtextxy(itx, ity, btn_invisible.text);
+    }
+    // ==================================================
+
+    // 绘制雾刃动画
+    if (fog_blade.is_flying) {
+        POINT pos = get_pos(fog_blade.current_r, fog_blade.current_c);
+        setfillcolor(RGB(0, 100, 200));
+        setcolor(RGB(0, 50, 150));
+        fillcircle(pos.x, pos.y, 20);
+    }
+
     FlushBatchDraw();
 }
 
-// --- 鼠标点击坐标转棋盘行列 ---
+// --- 鼠标点击转棋盘行列 ---
 bool click_to_board(int x, int y, int& row, int& col) {
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
@@ -398,7 +582,7 @@ bool click_to_board(int x, int y, int& row, int& col) {
     return false;
 }
 
-// --- 辅助：计算两点之间棋子数量 ---
+// --- 计算两点间棋子数量 ---
 int count_pieces_between(int r1, int c1, int r2, int c2) {
     int count = 0;
     if (r1 == r2) {
@@ -418,13 +602,11 @@ int count_pieces_between(int r1, int c1, int r2, int c2) {
     return count;
 }
 
-// --- 核心：走棋规则校验 ---
+// --- 走棋规则校验 ---
 bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
     ChessPiece from = board[from_r][from_c];
     ChessPiece to = board[to_r][to_c];
-
     if (to.color == from.color) return false;
-
     int dr = abs(to_r - from_r);
     int dc = abs(to_c - from_c);
 
@@ -489,9 +671,9 @@ bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
             }
             else {
                 if (dr > 1 || dc > 1) return false;
-                if (dr == 1 && dc != 0) return false;
-                if (dc == 1 && dr != 0) return false;
-                if (to_r > from_r) return false;
+                if ((dr == 1 && dc != 0) || (dc == 1 && dr != 0)) {
+                    if (to_r > from_r) return false;
+                }
             }
         }
         else {
@@ -500,9 +682,9 @@ bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
             }
             else {
                 if (dr > 1 || dc > 1) return false;
-                if (dr == 1 && dc != 0) return false;
-                if (dc == 1 && dr != 0) return false;
-                if (to_r < from_r) return false;
+                if ((dr == 1 && dc != 0) || (dc == 1 && dr != 0)) {
+                    if (to_r < from_r) return false;
+                }
             }
         }
         return true;
@@ -512,7 +694,7 @@ bool is_move_valid(int from_r, int from_c, int to_r, int to_c) {
     }
 }
 
-// --- 辅助：找到某一方将/帅的位置 ---
+// --- 找到将帅位置 ---
 POINT find_general_pos(Color color) {
     POINT pos = { -1, -1 };
     for (int r = 0; r < ROW_NUM; r++) {
@@ -527,14 +709,12 @@ POINT find_general_pos(Color color) {
     return pos;
 }
 
-// --- 核心：判断某一方是否被将军（含将帅照面规则） ---
+// --- 判断是否被将军 ---
 bool is_checked(Color color) {
     POINT general_pos = find_general_pos(color);
     if (general_pos.x == -1) return false;
-
     Color enemy_color = (color == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
 
-    // 检查对方棋子是否能将军
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
             if (board[r][c].color == enemy_color) {
@@ -545,10 +725,8 @@ bool is_checked(Color color) {
         }
     }
 
-    // 检查将帅是否直接照面（飞将）
     POINT enemy_general_pos = find_general_pos(enemy_color);
-    if (enemy_general_pos.x == general_pos.x) { // 同一列
-        // 检查中间是否有棋子
+    if (enemy_general_pos.x == general_pos.x) {
         int min_r = min(general_pos.y, enemy_general_pos.y);
         int max_r = max(general_pos.y, enemy_general_pos.y);
         bool has_piece_between = false;
@@ -558,38 +736,29 @@ bool is_checked(Color color) {
                 break;
             }
         }
-        // 如果中间没有棋子，就是将帅照面，属于将军
-        if (!has_piece_between) {
-            return true;
-        }
+        if (!has_piece_between) return true;
     }
-
     return false;
 }
 
-// --- 核心：判断走某一步棋之后，己方是否安全 ---
+// --- 判断走棋是否安全 ---
 bool is_move_safe(int from_r, int from_c, int to_r, int to_c) {
     Color current_color = board[from_r][from_c].color;
-    // 保存目标位置的原始棋子（用于恢复）
     ChessPiece old_target = board[to_r][to_c];
 
-    // 【模拟走棋】
     board[to_r][to_c] = board[from_r][from_c];
     board[from_r][from_c].color = CHESS_EMPTY;
     board[from_r][from_c].type = TYPE_NONE;
     board[from_r][from_c].show = false;
 
-    // 检查模拟走棋后，己方是否被将军
     bool safe = !is_checked(current_color);
 
-    // 【恢复棋盘】
     board[from_r][from_c] = board[to_r][to_c];
     board[to_r][to_c] = old_target;
-
     return safe;
 }
 
-// --- 胜负判断 ---
+// --- 判断将帅是否存活 ---
 bool is_general_alive(Color color) {
     for (int r = 0; r < ROW_NUM; r++) {
         for (int c = 0; c < COL_NUM; c++) {
@@ -601,9 +770,8 @@ bool is_general_alive(Color color) {
     return false;
 }
 
-// --- 执行棋子移动（含悔棋记录+高亮+音效）---
+// --- 执行棋子移动 ---
 void move_piece(int from_r, int from_c, int to_r, int to_c) {
-    // 保存悔棋记录
     StepRecord rec;
     rec.from_r = from_r; rec.from_c = from_c;
     rec.to_r = to_r; rec.to_c = to_c;
@@ -615,29 +783,19 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
     rec.has_last = has_last_step;
     move_history.push_back(rec);
 
-    // 记录上一步高亮
     last_from_r = from_r; last_from_c = from_c;
     last_to_r = to_r; last_to_c = to_c;
     has_last_step = true;
 
-    // 判断是否吃子
     bool is_eat = (board[to_r][to_c].color != CHESS_EMPTY);
-
-    // 移动棋子核心逻辑
     board[to_r][to_c] = board[from_r][from_c];
     board[from_r][from_c].color = CHESS_EMPTY;
     board[from_r][from_c].type = TYPE_NONE;
     board[from_r][from_c].show = false;
 
-    // 音效
-    if (is_eat) {
-        play_sound(_T("吃子.mp3"));
-    }
-    else {
-        play_sound(_T("落子.mp3"));
-    }
+    if (is_eat) play_sound(_T("吃子.mp3"));
+    else play_sound(_T("落子.mp3"));
 
-    // 胜负判定
     if (!is_general_alive(CHESS_RED)) {
         game_over = true;
         _tcscpy_s(game_result, _T("游戏结束！黑方胜利！"));
@@ -647,27 +805,21 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
         _tcscpy_s(game_result, _T("游戏结束！红方胜利！"));
     }
 
-    // 切换回合
-    if (!game_over) {
-        turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
-    }
+    if (!game_over) turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
 }
-// 【新增：悔棋函数】
+
+// --- 悔棋函数 ---
 void undo_move() {
     if (move_history.empty() || game_over) return;
-
     StepRecord rec = move_history.back();
     move_history.pop_back();
 
-    // 恢复棋盘
     board[rec.from_r][rec.from_c] = board[rec.to_r][rec.to_c];
     board[rec.to_r][rec.to_c] = rec.old_target;
 
-    // 恢复状态
     turn = rec.old_turn;
     game_over = rec.old_game_over;
 
-    // 恢复高亮
     last_from_r = rec.last_fr;
     last_from_c = rec.last_fc;
     last_to_r = rec.last_tr;
@@ -677,12 +829,122 @@ void undo_move() {
     repaint_all();
 }
 
-// 判断鼠标是否在按钮上
+// --- 判断是否在悔棋按钮上 ---
 bool is_in_undo_btn(int x, int y) {
     return x >= undo_btn.x && x <= undo_btn.x + undo_btn.w
         && y >= undo_btn.y && y <= undo_btn.y + undo_btn.h;
 }
-// 棋子基础价值
+
+// ===================== 杰克技能核心函数 =====================
+void activate_fog_blade() {
+    if (skill_piece_r == -1) return;
+    fog_blade.is_flying = true;
+    fog_blade.current_r = skill_piece_r;
+    fog_blade.current_c = skill_piece_c;
+    fog_blade.direction = (board[skill_piece_r][skill_piece_c].color == CHESS_RED) ? -1 : 1;
+    fog_blade.frame_count = 0;
+    show_jack_form = true;
+    repaint_all();
+}
+
+void update_fog_blade() {
+    if (!fog_blade.is_flying) return;
+    fog_blade.frame_count++;
+    if (fog_blade.frame_count % 5 == 0) {
+        fog_blade.current_r += fog_blade.direction;
+        if (fog_blade.current_r < 0 || fog_blade.current_r >= ROW_NUM) {
+            fog_blade.is_flying = false;
+            show_jack_form = false;
+            turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
+            is_selected = false;
+            selected_row = selected_col = -1;
+            skill_piece_r = skill_piece_c = -1;
+            btn_fog_blade.is_active = false;
+            btn_invisible.is_active = false;
+            repaint_all();
+            return;
+        }
+        if (board[fog_blade.current_r][fog_blade.current_c].color != CHESS_EMPTY) {
+            fog_blade.is_flying = false;
+            show_jack_form = false;
+            StepRecord rec;
+            rec.from_r = skill_piece_r;
+            rec.from_c = skill_piece_c;
+            rec.to_r = fog_blade.current_r;
+            rec.to_c = fog_blade.current_c;
+            rec.old_target = board[fog_blade.current_r][fog_blade.current_c];
+            rec.old_turn = turn;
+            rec.old_game_over = game_over;
+            rec.last_fr = last_from_r; rec.last_fc = last_from_c;
+            rec.last_tr = last_to_r; rec.last_tc = last_to_c;
+            rec.has_last = has_last_step;
+            move_history.push_back(rec);
+
+            if (board[fog_blade.current_r][fog_blade.current_c].type == GENERAL) {
+                game_over = true;
+                Color winner = (turn == CHESS_RED) ? CHESS_RED : CHESS_BLACK;
+                _tcscpy_s(game_result, _countof(game_result),
+                    winner == CHESS_RED ? _T("雾刃命中！红方胜利！") : _T("雾刃命中！黑方胜利！"));
+            }
+            else {
+                board[fog_blade.current_r][fog_blade.current_c].color = CHESS_EMPTY;
+                board[fog_blade.current_r][fog_blade.current_c].type = TYPE_NONE;
+                board[fog_blade.current_r][fog_blade.current_c].show = false;
+            }
+            turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
+            is_selected = false;
+            selected_row = selected_col = -1;
+            skill_piece_r = skill_piece_c = -1;
+            btn_fog_blade.is_active = false;
+            btn_invisible.is_active = false;
+            repaint_all();
+            return;
+        }
+    }
+    repaint_all();
+}
+
+void activate_invisible() {
+    if (skill_piece_r == -1) return;
+    invisible_mode = true;
+    show_jack_form = true;
+    repaint_all();
+}
+
+void execute_invisible_move(int to_r, int to_c) {
+    if (board[to_r][to_c].color != CHESS_EMPTY) return;
+    StepRecord rec;
+    rec.from_r = skill_piece_r;
+    rec.from_c = skill_piece_c;
+    rec.to_r = to_r;
+    rec.to_c = to_c;
+    rec.old_target = board[to_r][to_c];
+    rec.old_turn = turn;
+    rec.old_game_over = game_over;
+    rec.last_fr = last_from_r; rec.last_fc = last_from_c;
+    rec.last_tr = last_to_r; rec.last_tc = last_to_c;
+    rec.has_last = has_last_step;
+    move_history.push_back(rec);
+
+    board[to_r][to_c] = board[skill_piece_r][skill_piece_c];
+    board[skill_piece_r][skill_piece_c].color = CHESS_EMPTY;
+    board[skill_piece_r][skill_piece_c].type = TYPE_NONE;
+    board[skill_piece_r][skill_piece_c].show = false;
+
+    invisible_mode = false;
+    show_jack_form = false;
+    turn = (turn == CHESS_RED) ? CHESS_BLACK : CHESS_RED;
+    is_selected = false;
+    selected_row = -1;
+    selected_col = -1;
+    skill_piece_r = skill_piece_c = -1;
+    btn_fog_blade.is_active = false;
+    btn_invisible.is_active = false;
+    repaint_all();
+}
+// ============================================================
+
+// --- AI相关函数 ---
 enum PieceValue {
     VAL_GENERAL = 10000,
     VAL_CHARIOT = 900,
@@ -693,11 +955,8 @@ enum PieceValue {
     VAL_SOLDIER = 100
 };
 
-// 根据棋子类型拿价值
-int getPieceValue(Type t)
-{
-    switch (t)
-    {
+int getPieceValue(Type t) {
+    switch (t) {
     case GENERAL:return VAL_GENERAL;
     case CHARIOT:return VAL_CHARIOT;
     case CANNON: return VAL_CANNON;
@@ -709,55 +968,36 @@ int getPieceValue(Type t)
     }
 }
 
-// 评估整个棋盘局势：黑方得分 - 红方得分
-int evaluate()
-{
+int evaluate() {
     int score = 0;
-    for (int r = 0;r < ROW_NUM;r++)
-    {
-        for (int c = 0;c < COL_NUM;c++)
-        {
+    for (int r = 0;r < ROW_NUM;r++) {
+        for (int c = 0;c < COL_NUM;c++) {
             ChessPiece p = board[r][c];
             if (p.color == CHESS_EMPTY) continue;
-
             int val = getPieceValue(p.type);
-            // 黑方加分、红方减分
-            if (p.color == CHESS_BLACK)
-            {
+            if (p.color == CHESS_BLACK) {
                 score += val;
-                // 黑方子往前推进额外加分
                 score += r * 2;
             }
-            else
-            {
+            else {
                 score -= val;
-                // 红方子往后退对黑方有利
                 score -= (9 - r) * 2;
             }
         }
     }
-    // 被将军大幅扣分
     if (is_checked(CHESS_BLACK)) score -= 800;
     if (is_checked(CHESS_RED))  score += 800;
-
     return score;
 }
 
-// 生成当前所有合法安全走法（修正：加上std::vector）
-void getAllLegalMoves(Color color, std::vector<ChessMove>& moves)
-{
+void getAllLegalMoves(Color color, std::vector<ChessMove>& moves) {
     moves.clear();
-    for (int fr = 0;fr < ROW_NUM;fr++)
-    {
-        for (int fc = 0;fc < COL_NUM;fc++)
-        {
+    for (int fr = 0;fr < ROW_NUM;fr++) {
+        for (int fc = 0;fc < COL_NUM;fc++) {
             if (board[fr][fc].color != color) continue;
-            for (int tr = 0;tr < ROW_NUM;tr++)
-            {
-                for (int tc = 0;tc < COL_NUM;tc++)
-                {
-                    if (is_move_valid(fr, fc, tr, tc) && is_move_safe(fr, fc, tr, tc))
-                    {
+            for (int tr = 0;tr < ROW_NUM;tr++) {
+                for (int tc = 0;tc < COL_NUM;tc++) {
+                    if (is_move_valid(fr, fc, tr, tc) && is_move_safe(fr, fc, tr, tc)) {
                         ChessMove m;
                         m.from_r = fr; m.from_c = fc;
                         m.to_r = tr;   m.to_c = tc;
@@ -770,9 +1010,7 @@ void getAllLegalMoves(Color color, std::vector<ChessMove>& moves)
     }
 }
 
-// 模拟走棋（修正：参数和调用一致）
-void fakeMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar)
-{
+void fakeMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar) {
     oldTar = board[tr][tc];
     board[tr][tc] = board[fr][fc];
     board[fr][fc].color = CHESS_EMPTY;
@@ -780,117 +1018,74 @@ void fakeMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar)
     board[fr][fc].show = false;
 }
 
-// 撤销模拟走棋（修正：参数和调用一致）
-void undoMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar)
-{
+void undoMove(int fr, int fc, int tr, int tc, ChessPiece& oldTar) {
     board[fr][fc] = board[tr][tc];
     board[tr][tc] = oldTar;
 }
 
-// Alpha-Beta 剪枝核心（修正：加上std::vector）
-int alphaBeta(int depth, int alpha, int beta, bool isMaxTurn)
-{
-    // 深度到了直接评估局势
-    if (depth == 0)
-        return evaluate();
-
+int alphaBeta(int depth, int alpha, int beta, bool isMaxTurn) {
+    if (depth == 0) return evaluate();
     Color me = isMaxTurn ? CHESS_BLACK : CHESS_RED;
     std::vector<ChessMove> moves;
     getAllLegalMoves(me, moves);
+    if (moves.empty()) return isMaxTurn ? -100000 : 100000;
 
-    // 无子可走，被判负
-    if (moves.empty())
-        return isMaxTurn ? -100000 : 100000;
-
-    if (isMaxTurn)
-    {
-        // MAX层：AI黑方 取最大分
+    if (isMaxTurn) {
         int best = -999999;
-        for (auto& m : moves)
-        {
+        for (auto& m : moves) {
             ChessPiece oldTar;
             fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
             int val = alphaBeta(depth - 1, alpha, beta, false);
             best = max(best, val);
             alpha = max(alpha, best);
-
             undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
-            // Beta剪枝
             if (beta <= alpha) break;
         }
         return best;
     }
-    else
-    {
-        // MIN层：玩家红方 取最小分
+    else {
         int best = 999999;
-        for (auto& m : moves)
-        {
+        for (auto& m : moves) {
             ChessPiece oldTar;
             fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
             int val = alphaBeta(depth - 1, alpha, beta, true);
             best = min(best, val);
             beta = min(beta, best);
-
             undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
-            // Alpha剪枝
             if (beta <= alpha) break;
         }
         return best;
     }
 }
 
-// 废弃旧的生成走法，改用上面AlphaBeta（修正：加上std::vector）
-void generate_all_moves(Color color, std::vector<ChessMove>& moves)
-{
-    getAllLegalMoves(color, moves);
-}
-
-// 新版AI：用Alpha-Beta剪枝选最优步（修正：加上std::vector）
-void ai_move()
-{
+void ai_move() {
     if (game_over || turn != CHESS_BLACK) return;
-
     std::vector<ChessMove> moves;
     getAllLegalMoves(CHESS_BLACK, moves);
     if (moves.empty()) return;
 
     int bestVal = -999999;
     ChessMove bestMove = moves[0];
-
-    // 遍历所有走法，选评分最高的
-    for (auto& m : moves)
-    {
+    for (auto& m : moves) {
         ChessPiece oldTar;
         fakeMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
-        // 搜索深度3：往前看3步，不卡又聪明
         int val = alphaBeta(3, -999999, 999999, false);
-
         undoMove(m.from_r, m.from_c, m.to_r, m.to_c, oldTar);
-
-        if (val > bestVal)
-        {
+        if (val > bestVal) {
             bestVal = val;
             bestMove = m;
         }
     }
-
     move_piece(bestMove.from_r, bestMove.from_c, bestMove.to_r, bestMove.to_c);
     repaint_all();
 }
 
-// --- 美化后的模式选择界面（鼠标点击） ---
+// --- 模式选择界面 ---
 void select_game_mode() {
     initgraph(WINDOW_WIDTH, WINDOW_HEIGHT);
     setbkcolor(RGB(240, 230, 200));
     BeginBatchDraw();
 
-    // 初始化两个按钮（居中排版）
     int btn_width = 300;
     int btn_height = 80;
     int btn_x = (WINDOW_WIDTH - btn_width) / 2;
@@ -900,9 +1095,7 @@ void select_game_mode() {
     ExMessage msg;
     GameMode selected_mode = MODE_NONE;
 
-    // 模式选择循环
     while (selected_mode == MODE_NONE) {
-        // 监听鼠标消息
         while (peekmessage(&msg, EM_MOUSE)) {
             if (msg.message == WM_MOUSEMOVE) {
                 btn_two_player.is_hover = is_point_in_button(msg.x, msg.y, btn_two_player);
@@ -918,36 +1111,25 @@ void select_game_mode() {
             }
         }
 
-        // 重绘界面
         cleardevice();
-
-        // 绘制标题
         settextcolor(RGB(120, 50, 20));
         setbkmode(TRANSPARENT);
         settextstyle(60, 0, _T("楷体"));
         int title_x = (WINDOW_WIDTH - textwidth(_T("中国象棋"))) / 2;
         outtextxy(title_x, 150, _T("中国象棋"));
 
-        // 绘制副标题
         settextstyle(24, 0, _T("宋体"));
         int sub_title_x = (WINDOW_WIDTH - textwidth(_T("C++课程设计作品"))) / 2;
         outtextxy(sub_title_x, 230, _T("C++课程设计作品"));
 
-        // 绘制按钮
         Button buttons[] = { btn_two_player, btn_ai_player };
         for (int i = 0; i < 2; i++) {
             Button btn = buttons[i];
-            if (btn.is_hover) {
-                setfillcolor(RGB(220, 200, 170));
-            }
-            else {
-                setfillcolor(RGB(245, 235, 210));
-            }
+            setfillcolor(btn.is_hover ? RGB(220, 200, 170) : RGB(245, 235, 210));
             setlinecolor(RGB(120, 50, 20));
             setlinestyle(PS_SOLID, 2);
             fillroundrect(btn.x, btn.y, btn.x + btn.width, btn.y + btn.height, 10, 10);
 
-            // 绘制按钮文字（居中）
             settextcolor(RGB(80, 30, 10));
             settextstyle(28, 0, _T("楷体"));
             int text_x = btn.x + (btn.width - textwidth(btn.text)) / 2;
@@ -955,14 +1137,11 @@ void select_game_mode() {
             outtextxy(text_x, text_y, btn.text);
         }
 
-        // 绘制底部提示文字
         settextstyle(20, 0, _T("宋体"));
         int tip_x = (WINDOW_WIDTH - textwidth(_T("点击按钮选择游戏模式"))) / 2;
         outtextxy(tip_x, 650, _T("点击按钮选择游戏模式"));
 
         FlushBatchDraw();
-
-        // 按ESC键直接退出
         if (_kbhit() && _getch() == 27) {
             EndBatchDraw();
             closegraph();
@@ -970,12 +1149,9 @@ void select_game_mode() {
         }
     }
 
-    // 选择完成，保存模式，关闭选择界面，初始化游戏窗口
     game_mode = selected_mode;
     EndBatchDraw();
     closegraph();
-
-    // 重新初始化游戏主窗口
     initgraph(WINDOW_WIDTH, WINDOW_HEIGHT);
     setbkcolor(RGB(240, 230, 200));
     BeginBatchDraw();
@@ -983,31 +1159,28 @@ void select_game_mode() {
 
 // --- 主函数 ---
 int main() {
-    // 1. 选择游戏模式
     select_game_mode();
-
-    // 2. 初始化游戏
     init_game();
     repaint_all();
-
     ExMessage msg;
 
-    // 3. 游戏主循环
     while (true) {
-        // 游戏结束，仅响应ESC退出
         if (game_over) {
             if (_kbhit() && _getch() == 27) break;
             continue;
         }
 
-        // 回合开始时，判断当前方是否被将死
+        if (fog_blade.is_flying) {
+            update_fog_blade();
+            Sleep(20);
+            continue;
+        }
+
         if (is_checked(turn)) {
             bool has_legal_move = false;
-            // 遍历所有己方棋子，找能解将的合法走法
             for (int from_r = 0; from_r < ROW_NUM; from_r++) {
                 for (int from_c = 0; from_c < COL_NUM; from_c++) {
                     if (board[from_r][from_c].color != turn) continue;
-                    // 遍历所有可能的落点
                     for (int to_r = 0; to_r < ROW_NUM; to_r++) {
                         for (int to_c = 0; to_c < COL_NUM; to_c++) {
                             if (is_move_valid(from_r, from_c, to_r, to_c)
@@ -1020,7 +1193,6 @@ int main() {
                 }
             }
         end_check:
-            // 无合法走法，被将死，游戏结束
             if (!has_legal_move) {
                 game_over = true;
                 if (turn == CHESS_RED) {
@@ -1034,25 +1206,42 @@ int main() {
             }
         }
 
-        // 人机模式，AI自动走棋
         if (game_mode == MODE_AI && turn == CHESS_BLACK) {
             ai_move();
             continue;
         }
 
-        // 玩家鼠标交互
         if (peekmessage(&msg, EM_MOUSE)) {
-            // 检测悔棋按钮悬浮
             undo_btn.hover = is_in_undo_btn(msg.x, msg.y);
+            btn_fog_blade.is_hover = (msg.x >= btn_fog_blade.x && msg.x <= btn_fog_blade.x + btn_fog_blade.w && msg.y >= btn_fog_blade.y && msg.y <= btn_fog_blade.y + btn_fog_blade.h);
+            btn_invisible.is_hover = (msg.x >= btn_invisible.x && msg.x <= btn_invisible.x + btn_invisible.w && msg.y >= btn_invisible.y && msg.y <= btn_invisible.y + btn_invisible.h);
 
             if (msg.message == WM_LBUTTONDOWN) {
-                // 点击悔棋按钮
+                if (invisible_mode) {
+                    int cr, cc;
+                    if (click_to_board(msg.x, msg.y, cr, cc)) {
+                        if (board[cr][cc].color == CHESS_EMPTY) {
+                            execute_invisible_move(cr, cc);
+                        }
+                    }
+                    continue;
+                }
+
                 if (is_in_undo_btn(msg.x, msg.y)) {
                     undo_move();
                     continue;
                 }
 
-                // 原有棋盘点击逻辑
+                if (btn_fog_blade.is_active && btn_fog_blade.is_hover) {
+                    activate_fog_blade();
+                    continue;
+                }
+
+                if (btn_invisible.is_active && btn_invisible.is_hover) {
+                    activate_invisible();
+                    continue;
+                }
+
                 int click_r, click_c;
                 if (click_to_board(msg.x, msg.y, click_r, click_c)) {
                     if (!is_selected) {
@@ -1060,6 +1249,13 @@ int main() {
                             selected_row = click_r;
                             selected_col = click_c;
                             is_selected = true;
+                            skill_piece_r = click_r;
+                            skill_piece_c = click_c;
+
+                            btn_fog_blade.is_active = true;
+                            Type t = board[click_r][click_c].type;
+                            btn_invisible.is_active = (t == CHARIOT || t == SOLDIER);
+
                             repaint_all();
                         }
                     }
@@ -1067,11 +1263,20 @@ int main() {
                         if (board[click_r][click_c].color == turn) {
                             selected_row = click_r;
                             selected_col = click_c;
+                            skill_piece_r = click_r;
+                            skill_piece_c = click_c;
+
+                            btn_fog_blade.is_active = true;
+                            Type t = board[click_r][click_c].type;
+                            btn_invisible.is_active = (t == CHARIOT || t == SOLDIER);
                             repaint_all();
                         }
                         else {
                             if (is_move_valid(selected_row, selected_col, click_r, click_c) && is_move_safe(selected_row, selected_col, click_r, click_c)) {
                                 move_piece(selected_row, selected_col, click_r, click_c);
+                                btn_fog_blade.is_active = false;
+                                btn_invisible.is_active = false;
+                                skill_piece_r = skill_piece_c = -1;
                             }
                             is_selected = false;
                             selected_row = -1;
@@ -1082,11 +1287,9 @@ int main() {
                 }
             }
         }
-        // 按ESC键退出
         if (_kbhit() && _getch() == 27) break;
     }
 
-    // 资源释放
     EndBatchDraw();
     closegraph();
     return 0;
