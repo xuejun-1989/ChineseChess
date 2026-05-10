@@ -34,15 +34,30 @@ void init_resources() {
     load(img_btn_2p_hover, _T("res/images/btn_twoplayer_hover.png"), 300, 80);
     load(img_btn_ai, _T("res/images/btn_ai.png"), 300, 80);
     load(img_btn_ai_hover, _T("res/images/btn_ai_hover.png"), 300, 80);
+    //棋子
+    load(img_piece_red_general, _T("res/images/piece_red_general.png"), 0, 0);
+    load(img_piece_red_advisor, _T("res/images/piece_red_advisor.png"), 0, 0);
+    load(img_piece_red_elephant, _T("res/images/piece_red_elephant.png"), 0, 0);
+    load(img_piece_red_horse, _T("res/images/piece_red_horse.png"), 0, 0);
+    load(img_piece_red_chariot, _T("res/images/piece_red_chariot.png"), 0, 0);
+    load(img_piece_red_cannon, _T("res/images/piece_red_cannon.png"), 0, 0);
+    load(img_piece_red_soldier, _T("res/images/piece_red_soldier.png"), 0, 0);
+    load(img_piece_black_general, _T("res/images/piece_black_general.png"), 0, 0);
+    load(img_piece_black_advisor, _T("res/images/piece_black_advisor.png"), 0, 0);
+    load(img_piece_black_elephant, _T("res/images/piece_black_elephant.png"), 0, 0);
+    load(img_piece_black_horse, _T("res/images/piece_black_horse.png"), 0, 0);
+    load(img_piece_black_chariot, _T("res/images/piece_black_chariot.png"), 0, 0);
+    load(img_piece_black_cannon, _T("res/images/piece_black_cannon.png"), 0, 0);
+    load(img_piece_black_soldier, _T("res/images/piece_black_soldier.png"), 0, 0);
 
     img_load_success = (img_fog_active.getwidth() > 0);
 
     // 半透明遮罩
-    img_hover_mask.Resize(50, 50);
+    img_hover_mask.Resize(75, 75);
     DWORD* buf = GetImageBuffer(&img_hover_mask);
     if (buf) {
         DWORD color = (80 << 24) | (255 << 16) | (255 << 8) | 255;
-        int total = 50 * 50;
+        int total = 75 * 75;
         for (int i = 0; i < total; i++) buf[i] = color;
     }
 }

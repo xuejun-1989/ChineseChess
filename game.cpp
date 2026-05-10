@@ -182,8 +182,8 @@ void init_game() {
     SET(6, 6, CHESS_RED, SOLDIER); SET(6, 8, CHESS_RED, SOLDIER);
 #undef SET
 
-    btn_fog_blade = { 587, 402, 75, 75, _T(""), false, false };
-    btn_invisible = { 587, 549, 75, 75, _T(""), false, false };
+    btn_fog_blade = { 577, 392, 75, 75, _T(""), false, false };
+    btn_invisible = { 577, 514, 75, 75, _T(""), false, false };
     fog_blade = { false, -1, -1, 0, 0 };
     invisible_mode = false;
     skill_piece_r = skill_piece_c = -1;

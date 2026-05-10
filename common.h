@@ -14,14 +14,16 @@
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "msimg32.lib")
 
-#define GRID_SIZE 67
-#define LEFT_MARGIN 96
-#define TOP_MARGIN 205
+#define GRID_SIZE 54
+#define LEFT_MARGIN 84
+#define TOP_MARGIN 204
 #define ROW_NUM 10
 #define COL_NUM 9
 #define WINDOW_WIDTH 720
 #define WINDOW_HEIGHT 800
 #define _CRT_SECURE_NO_WARNINGS
+#define PIECE_OFFSET_X 0
+#define PIECE_OFFSET_Y 0
 
 enum Color { CHESS_RED, CHESS_BLACK, CHESS_EMPTY };
 enum Type { GENERAL, ADVISOR, ELEPHANT, HORSE, CHARIOT, CANNON, SOLDIER, TYPE_NONE };
@@ -75,6 +77,20 @@ extern IMAGE img_btn_2p;            // 双人对战按钮（普通）
 extern IMAGE img_btn_2p_hover;      // 双人对战按钮（悬停）
 extern IMAGE img_btn_ai;            // 人机对战按钮（普通）
 extern IMAGE img_btn_ai_hover;      // 人机对战按钮（悬停）
+extern IMAGE img_piece_red_general;
+extern IMAGE img_piece_red_advisor;
+extern IMAGE img_piece_red_elephant;
+extern IMAGE img_piece_red_horse;
+extern IMAGE img_piece_red_chariot;
+extern IMAGE img_piece_red_cannon;
+extern IMAGE img_piece_red_soldier;
+extern IMAGE img_piece_black_general;
+extern IMAGE img_piece_black_advisor;
+extern IMAGE img_piece_black_elephant;
+extern IMAGE img_piece_black_horse;
+extern IMAGE img_piece_black_chariot;
+extern IMAGE img_piece_black_cannon;
+extern IMAGE img_piece_black_soldier;
 extern bool img_load_success;
 
 // ===== 通用函数声明 =====

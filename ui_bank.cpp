@@ -39,11 +39,7 @@ void draw_piece(int row, int col) {
     ChessPiece p = board[row][col];
     if (p.color == CHESS_EMPTY || !p.show) return;
     POINT pos = get_pos(row, col);
-    int r = GRID_SIZE / 2 - 5;
-
-    if (is_selected && row == selected_row && col == selected_col) {
-        setlinecolor(YELLOW); setlinestyle(PS_SOLID, 3); circle(pos.x, pos.y, r + 3);
-    }
+    int r = GRID_SIZE / 2 - 10;
 
     if (show_jack_form && row == skill_piece_r && col == skill_piece_c) {
         IMAGE* use = invisible_mode ? &img_jack_invis : &img_jack_fog;
@@ -69,30 +65,69 @@ void draw_piece(int row, int col) {
         return;
     }
 
-    setfillcolor(RGB(255, 250, 200)); setlinecolor(BLACK); setlinestyle(PS_SOLID, 2);
-    fillcircle(pos.x, pos.y, r);
-
-    TCHAR text[4] = { 0 };
+    // 普通棋子绘制（用图片）
+    IMAGE* use_piece = NULL;
     if (p.color == CHESS_RED) {
         switch (p.type) {
-        case GENERAL: _tcscpy_s(text, _T("帥")); break; case ADVISOR: _tcscpy_s(text, _T("仕")); break;
-        case ELEPHANT:_tcscpy_s(text, _T("相")); break; case HORSE:   _tcscpy_s(text, _T("馬")); break;
-        case CHARIOT: _tcscpy_s(text, _T("車")); break; case CANNON:  _tcscpy_s(text, _T("炮")); break;
-        case SOLDIER: _tcscpy_s(text, _T("兵")); break;
+        case GENERAL:  use_piece = &img_piece_red_general; break;
+        case ADVISOR:  use_piece = &img_piece_red_advisor; break;
+        case ELEPHANT: use_piece = &img_piece_red_elephant; break;
+        case HORSE:    use_piece = &img_piece_red_horse; break;
+        case CHARIOT:  use_piece = &img_piece_red_chariot; break;
+        case CANNON:   use_piece = &img_piece_red_cannon; break;
+        case SOLDIER:  use_piece = &img_piece_red_soldier; break;
         }
-        settextcolor(RGB(200, 0, 0));
     }
     else {
         switch (p.type) {
-        case GENERAL: _tcscpy_s(text, _T("將")); break; case ADVISOR: _tcscpy_s(text, _T("士")); break;
-        case ELEPHANT:_tcscpy_s(text, _T("象")); break; case HORSE:   _tcscpy_s(text, _T("馬")); break;
-        case CHARIOT: _tcscpy_s(text, _T("車")); break; case CANNON:  _tcscpy_s(text, _T("砲")); break;
-        case SOLDIER: _tcscpy_s(text, _T("卒")); break;
+        case GENERAL:  use_piece = &img_piece_black_general; break;
+        case ADVISOR:  use_piece = &img_piece_black_advisor; break;
+        case ELEPHANT: use_piece = &img_piece_black_elephant; break;
+        case HORSE:    use_piece = &img_piece_black_horse; break;
+        case CHARIOT:  use_piece = &img_piece_black_chariot; break;
+        case CANNON:   use_piece = &img_piece_black_cannon; break;
+        case SOLDIER:  use_piece = &img_piece_black_soldier; break;
         }
-        settextcolor(RGB(0, 0, 0));
     }
-    setbkmode(TRANSPARENT); settextstyle(36, 0, _T("楷体"));
-    outtextxy(pos.x - textwidth(text) / 2, pos.y - textheight(text) / 2, text);
+
+    if (use_piece && use_piece->getwidth() > 0) {
+        // 动态居中绘制
+        int pw = use_piece->getwidth();
+        int ph = use_piece->getheight();
+        putimage_alpha(pos.x - pw / 2, pos.y - ph / 2, use_piece);
+    }
+    else {
+        // 兜底：图片未加载时，仍用原来的文字棋子
+        setfillcolor(RGB(255, 250, 200)); setlinecolor(BLACK); setlinestyle(PS_SOLID, 2);
+        fillcircle(pos.x, pos.y, r);
+        TCHAR text[4] = { 0 };
+        if (p.color == CHESS_RED) {
+            switch (p.type) {
+            case GENERAL: _tcscpy_s(text, _T("帥")); break;
+            case ADVISOR: _tcscpy_s(text, _T("仕")); break;
+            case ELEPHANT:_tcscpy_s(text, _T("相")); break;
+            case HORSE:   _tcscpy_s(text, _T("馬")); break;
+            case CHARIOT: _tcscpy_s(text, _T("車")); break;
+            case CANNON:  _tcscpy_s(text, _T("炮")); break;
+            case SOLDIER: _tcscpy_s(text, _T("兵")); break;
+            }
+            settextcolor(RGB(200, 0, 0));
+        }
+        else {
+            switch (p.type) {
+            case GENERAL: _tcscpy_s(text, _T("將")); break;
+            case ADVISOR: _tcscpy_s(text, _T("士")); break;
+            case ELEPHANT:_tcscpy_s(text, _T("象")); break;
+            case HORSE:   _tcscpy_s(text, _T("馬")); break;
+            case CHARIOT: _tcscpy_s(text, _T("車")); break;
+            case CANNON:  _tcscpy_s(text, _T("砲")); break;
+            case SOLDIER: _tcscpy_s(text, _T("卒")); break;
+            }
+            settextcolor(RGB(0, 0, 0));
+        }
+        setbkmode(TRANSPARENT); settextstyle(30, 0, _T("楷体"));
+        outtextxy(pos.x - textwidth(text) / 2, pos.y - textheight(text) / 2, text);
+    }
 }
 
 //圆形碰撞检测
@@ -113,6 +148,15 @@ void repaint_all() {
     if (img_board_bg.getwidth() > 0) putimage(0, 0, &img_board_bg);
     draw_last_step();
     for (int r = 0; r < ROW_NUM; r++) for (int c = 0; c < COL_NUM; c++) draw_piece(r, c);
+
+    // 绘制选中棋子高亮圈（放在最上层，不被棋子图片遮盖）
+    if (is_selected && selected_row >= 0 && selected_col >= 0) {
+        POINT pos = get_pos(selected_row, selected_col);
+        int radius = GRID_SIZE / 2 - 10;   // 与你棋子半径保持一致
+        setlinecolor(YELLOW);
+        setlinestyle(PS_SOLID, 3);
+        circle(pos.x, pos.y, radius + 3);
+    }
 
     settextcolor(BLUE); setbkmode(TRANSPARENT); settextstyle(20, 0, _T("宋体"));
     if (game_over) {
