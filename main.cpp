@@ -144,6 +144,8 @@ bool has_last_step = false;
 UndoButton undo_btn = { 610, 120, 100, 50, _T("悔棋"), false };
 std::vector<StepRecord> move_history;
 
+TCHAR g_exeDir[MAX_PATH] = { 0 };
+
 // 杰克技能全局变量
 SkillButton btn_fog_blade;
 SkillButton btn_invisible;
@@ -352,21 +354,50 @@ void draw_piece(int row, int col) {
 }
 
 // --- 游戏初始化（含图片加载）---
+
+// 获取 exe 所在目录
+TCHAR* GetExeDir(TCHAR* buf, size_t size)
+{
+    GetModuleFileName(NULL, buf, (DWORD)size);
+    TCHAR* p = _tcsrchr(buf, _T('\\'));
+    if (p) *(p + 1) = _T('\0');
+    return buf;
+}
+
 void init_game() {
+    TCHAR exeDir[MAX_PATH] = { 0 };
+    GetExeDir(exeDir, MAX_PATH);
+    _tcscpy_s(g_exeDir, _countof(g_exeDir), exeDir);
+    TCHAR path[512] = { 0 };
     // ========== 加载技能图片 ==========
-    // 加载按钮图片，固定100x50尺寸，自动拉伸适配
-    loadimage(&img_fog_active, _T("fog_blade_active.png"), 0, 0);
-    loadimage(&img_fog_disable, _T("fog_blade_disable.png"), 0, 0);
-    loadimage(&img_invis_active, _T("invisible_active.png"), 0, 0);
-    loadimage(&img_invis_disable, _T("invisible_disable.png"), 0, 0);
-    loadimage(&img_board_bg, _T("board_bg.png"), WINDOW_WIDTH, WINDOW_HEIGHT);
-    // 加载杰克棋子图片，固定50x50
-    loadimage(&img_jack_fog, _T("jack_fog.png"), 50, 50);
-    loadimage(&img_jack_invis, _T("jack_invisible.png"), 50, 50);
-    //雾刃图
-    loadimage(&img_fog_slash, _T("fog_slash.png"), 0, 0);  
-    
-    loadimage(&img_undo, _T("undo.png"), 0, 0);   // 按钮大小
+    _stprintf_s(path, _T("%sres/images/fog_blade_active.png"), exeDir);
+    loadimage(&img_fog_active, path, 0, 0);
+
+    _stprintf_s(path, _T("%sres/images/fog_blade_disable.png"), exeDir);
+    loadimage(&img_fog_disable, path, 0, 0);
+
+    _stprintf_s(path, _T("%sres/images/invisible_active.png"), exeDir);
+    loadimage(&img_invis_active, path, 0, 0);
+
+    _stprintf_s(path, _T("%sres/images/invisible_disable.png"), exeDir);
+    loadimage(&img_invis_disable, path, 0, 0);
+
+    _stprintf_s(path, _T("%sres/images/jack_fog.png"), exeDir);
+    loadimage(&img_jack_fog, path, 50, 50);
+
+    _stprintf_s(path, _T("%sres/images/jack_invisible.png"), exeDir);
+    loadimage(&img_jack_invis, path, 50, 50);
+
+    _stprintf_s(path, _T("%sres/images/fog_slash.png"), exeDir);
+    loadimage(&img_fog_slash, path, 0, 0);
+
+    _stprintf_s(path, _T("%sres/images/undo.png"), exeDir);
+    loadimage(&img_undo, path, 0, 0);
+
+    if (img_board_bg.getwidth() == 0) { // 如果有背景图
+        _stprintf_s(path, _T("%sres/images/board_bg.png"), exeDir);
+        loadimage(&img_board_bg, path, WINDOW_WIDTH, WINDOW_HEIGHT);
+    }
     
     img_load_success = (img_fog_active.getwidth()  > 0);
     // ==============================================
@@ -830,8 +861,15 @@ void move_piece(int from_r, int from_c, int to_r, int to_c) {
     board[from_r][from_c].type = TYPE_NONE;
     board[from_r][from_c].show = false;
 
-    if (is_eat) play_sound(_T("吃子.mp3"));
-    else play_sound(_T("落子.mp3"));
+    TCHAR soundPath[512];
+    if (is_eat) {
+        _stprintf_s(soundPath, _T("%sres/sounds/吃子.mp3"), g_exeDir);
+        play_sound(soundPath);
+    }
+    else {
+        _stprintf_s(soundPath, _T("%sres/sounds/落子.mp3"), g_exeDir);
+        play_sound(soundPath);
+    }
 
     if (!is_general_alive(CHESS_RED)) {
         game_over = true;
@@ -1312,16 +1350,24 @@ int main() {
                 }
 
                 if (btn_fog_blade.is_active && btn_fog_blade.is_hover) {
+                    // 将军状态下不能使用技能
+                    if (is_checked(turn)) {
+                        MessageBox(GetHWnd(), _T("当前状态不可使用该技能！"), _T("提示"), MB_OK | MB_ICONWARNING);
+                        continue;
+                    }
                     // 弹出确认对话框
                     if (MessageBox(GetHWnd(), _T("是否要使用超模雾刃？"), _T("确认"), MB_YESNO | MB_ICONQUESTION) == IDYES) {
                         activate_fog_blade();
                     }
-                    // 无论确认与否，都跳过后续棋盘点击处理
                     continue;
                 }
 
                 if (btn_invisible.is_active && btn_invisible.is_hover) {
-                    // 此时 invisible_mode 必然为 false（因为该变量为真时已在上面处理）
+                    // 将军状态下不能使用技能
+                    if (is_checked(turn)) {
+                        MessageBox(GetHWnd(), _T("当前状态不可使用该技能！"), _T("提示"), MB_OK | MB_ICONWARNING);
+                        continue;
+                    }
                     activate_invisible();
                     continue;
                 }
