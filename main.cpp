@@ -14,6 +14,10 @@ int main() {
     ExMessage msg;
 
     while (true) {
+        if (g_shake_strength > 0 ||g_anim.is_moving || fog_blade.is_flying) {
+            repaint_all();
+            Sleep(10); // 10ms刷新一次，保证100fps的动画流畅度
+        }
         if (game_over) {
             if (_kbhit() && _getch() == 27) break;
             continue;
@@ -106,6 +110,7 @@ int main() {
                     }
                 }
             }
+            repaint_all();
         }
         if (_kbhit() && _getch() == 27) break;
     }

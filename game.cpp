@@ -201,6 +201,25 @@ void init_game() {
 
 // ---------- 走棋 ----------
 void move_piece(int from_r, int from_c, int to_r, int to_c) {
+    // 1. 在逻辑变动前，记录动画起始点
+    POINT start_pt = get_pos(from_r, from_c);
+    POINT end_pt = get_pos(to_r, to_c);
+
+    g_anim.is_moving = true;
+    g_anim.piece = board[from_r][from_c]; // 拷贝棋子镜像
+    g_anim.cur_x = (float)start_pt.x;
+    g_anim.cur_y = (float)start_pt.y;
+    g_anim.target_x = (float)end_pt.x;
+    g_anim.target_y = (float)end_pt.y;
+    g_anim.t = 0;
+
+    // --- 新增：根据是否吃子设置震动强度 ---
+    if (board[to_r][to_c].color != CHESS_EMPTY) {
+        g_shake_strength = 12; // 吃子：震动剧烈
+    }
+    else {
+        g_shake_strength = 4;  // 普通落子：轻微震动
+    }
     StepRecord rec;
     rec.from_r = from_r; rec.from_c = from_c;
     rec.to_r = to_r; rec.to_c = to_c;

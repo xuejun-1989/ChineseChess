@@ -1,4 +1,3 @@
-// common.h —— 所有模块共享的类型、宏和全局变量声明
 #pragma once
 #include <Windows.h>
 #include <mmsystem.h>
@@ -22,8 +21,6 @@
 #define WINDOW_WIDTH 720
 #define WINDOW_HEIGHT 800
 #define _CRT_SECURE_NO_WARNINGS
-#define PIECE_OFFSET_X 0
-#define PIECE_OFFSET_Y 0
 
 enum Color { CHESS_RED, CHESS_BLACK, CHESS_EMPTY };
 enum Type { GENERAL, ADVISOR, ELEPHANT, HORSE, CHARIOT, CANNON, SOLDIER, TYPE_NONE };
@@ -35,7 +32,21 @@ struct ChessMove { int from_r, from_c, to_r, to_c, score; };
 struct Button { int x, y, width, height; TCHAR text[32]; bool is_hover; GameMode mode; };
 struct UndoButton { int x, y, w, h; TCHAR text[16]; bool hover; };
 struct SkillButton { int x, y, w, h; TCHAR text[16]; bool is_active, is_hover; };
-struct FogBladeState { bool is_flying; int current_r, current_c, direction, frame_count; };
+
+// 统一的 FogBladeState 定义
+struct FogBladeState {
+    bool is_flying;
+    float cur_x, cur_y;
+    int current_r, current_c, direction, frame_count;
+};
+
+struct AnimState {
+    bool is_moving;
+    float cur_x, cur_y;
+    float target_x, target_y;
+    ChessPiece piece;
+    float t;
+};
 
 struct StepRecord {
     int from_r, from_c, to_r, to_c;
@@ -65,9 +76,11 @@ extern std::vector<StepRecord> move_history;
 extern TCHAR g_exeDir[MAX_PATH];
 extern SkillButton btn_fog_blade, btn_invisible;
 extern FogBladeState fog_blade;
+extern AnimState g_anim;
 extern bool invisible_mode;
 extern int skill_piece_r, skill_piece_c;
 extern bool show_jack_form;
+extern int g_shake_strength;
 
 extern IMAGE img_fog_active, img_fog_disable, img_invis_active, img_invis_disable;
 extern IMAGE img_jack_fog, img_jack_invis, img_fog_slash;
@@ -93,16 +106,12 @@ extern IMAGE img_piece_black_cannon;
 extern IMAGE img_piece_black_soldier;
 extern bool img_load_success;
 
-// ===== 通用函数声明 =====
+// ===== 函数声明 =====
 POINT get_pos(int row, int col);
-bool is_point_in_button(int x, int y, Button btn);
 void putimage_alpha(int x, int y, IMAGE* pSrcImg);
 void play_sound(LPCTSTR sound_file);
 bool click_to_board(int x, int y, int& row, int& col);
-int count_pieces_between(int r1, int c1, int r2, int c2);
 bool is_move_valid(int from_r, int from_c, int to_r, int to_c);
-POINT find_general_pos(Color color);
-bool is_checked(Color color);
 bool is_move_safe(int from_r, int from_c, int to_r, int to_c);
+bool is_checked(Color color);
 bool is_general_alive(Color color);
-TCHAR* GetExeDir(TCHAR* buf, size_t size);

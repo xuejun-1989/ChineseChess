@@ -13,14 +13,25 @@ static int getPieceValue(Type t) {
     }
 }
 
+// 棋子位置价值表（让AI知道：马跳中心更好，卒过河更强）
+const int horse_pst[10][9] = {
+    {-5,-10,-5,-5,-5,-5,-5,-10,-5},
+    {-5, 0, 5, 10, 10, 10, 5, 0, -5},
+    {-5, 5, 10, 15, 20, 15, 10, 5, -5}, // 马在中心分数更高
+    // ... 剩下的可以根据象棋常识填充 ...
+};
+
 int evaluate() {
     int score = 0;
-    for (int r = 0; r < ROW_NUM; r++) for (int c = 0; c < COL_NUM; c++) {
-        ChessPiece p = board[r][c];
-        if (p.color == CHESS_EMPTY) continue;
-        int val = getPieceValue(p.type);
-        if (p.color == CHESS_BLACK) { score += val; score += r * 2; }
-        else { score -= val; score -= (9 - r) * 2; }
+    for (int r = 0; r < ROW_NUM; r++) {
+        for (int c = 0; c < COL_NUM; c++) {
+            ChessPiece p = board[r][c];
+            if (p.color == CHESS_EMPTY) continue;
+            int val = getPieceValue(p.type);
+            if (p.type == HORSE) val += (p.color == CHESS_BLACK) ? horse_pst[r][c] : horse_pst[9 - r][c];
+            if (p.color == CHESS_BLACK) { score += val; score += r * 2; }
+            else { score -= val; score -= (9 - r) * 2; }
+        }
     }
     if (is_checked(CHESS_BLACK)) score -= 800;
     if (is_checked(CHESS_RED))  score += 800;
